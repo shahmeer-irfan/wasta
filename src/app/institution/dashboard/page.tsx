@@ -473,6 +473,37 @@ export default function InstitutionDashboard() {
             </span>
           </div>
 
+          {/* Queued calls waiting */}
+          {store.broadcastQueue.length > 0 && (
+            <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <motion.div
+                    className="w-2 h-2 rounded-full bg-red-500"
+                    animate={{ scale: [1, 1.3, 1] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  />
+                  <span className="text-[10px] font-bold text-red-700 uppercase tracking-wider">
+                    {store.broadcastQueue.length} Call{store.broadcastQueue.length > 1 ? 's' : ''} Waiting
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {store.broadcastQueue.map((b, i) => (
+                  <div key={b.id || i} className="flex items-center gap-2 text-[10px] text-red-600">
+                    <span className="w-4 h-4 rounded-full bg-red-100 flex items-center justify-center text-[8px] font-bold">{i + 1}</span>
+                    <span className="truncate">
+                      {b.incidents?.incident_type || 'Emergency'} — {b.incidents?.landmark || 'Unknown'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[9px] text-red-400 mt-1.5">
+                AI civilian ko hold pe rakh raha hai. Finish current call to accept next.
+              </p>
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
             <AnimatePresence initial={false}>
               {activeIncidents.map((incident) => {

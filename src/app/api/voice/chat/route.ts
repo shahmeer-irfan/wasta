@@ -5,8 +5,19 @@ import { createServiceClient } from '@/lib/supabase/client';
 
 export const dynamic = 'force-dynamic';
 
-// Track which sessions already created incidents — prevents duplicates
+// Track sessions → incidents
 const sessionIncidentMap = new Map<string, string>();
+// Track sessions that are on hold (institution busy)
+const sessionOnHold = new Set<string>();
+
+// Hold messages — AI will cycle through these to keep civilian engaged
+const HOLD_MESSAGES = [
+  'Aapki emergency record ho gayi hai. Rescue team ko notify kiya ja raha hai. Please line pe rahein.',
+  'Humari team abhi ek aur emergency handle kar rahi hai. Aap ka number agla hai. Fikar mat karein.',
+  'Aap safe hain? Koi aur zakhmi toh nahi? Madad aa rahi hai, thoda intezaar karein.',
+  'Rescue team jaldi aapko connect karegi. Please hold karein.',
+  'Aapki call queue mein hai. Boht jaldi aapko attend kiya jayega.',
+];
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -16,12 +27,11 @@ export async function POST(req: NextRequest) {
   const lat = parseFloat((formData.get('lat') as string) || '0') || null;
   const lng = parseFloat((formData.get('lng') as string) || '0') || null;
 
-  console.log('[VOICE-CHAT] ━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('[VOICE-CHAT] Session:', sessionId, 'hasAudio:', !!audioFile, 'hasText:', !!textInput);
 
   let userText = textInput || '';
 
-  // Step 1: Transcribe audio if provided
+  // Transcribe audio
   if (audioFile && !userText) {
     const buffer = Buffer.from(await audioFile.arrayBuffer());
     userText = await transcribeAudio(buffer);
@@ -38,14 +48,47 @@ export async function POST(req: NextRequest) {
 
   console.log('[VOICE-CHAT] User said:', userText);
 
-  // Check if this session already created an incident
+  // If session is on hold, keep civilian engaged
+  if (sessionOnHold.has(sessionId)) {
+    const existingId = sessionIncidentMap.get(sessionId) || null;
+    const supabase = createServiceClient();
+
+    // Check if institution has accepted this incident
+    if (existingId) {
+      const { data: inc } = await supabase
+        .from('incidents')
+        .select('status')
+        .eq('id', existingId)
+        .single();
+
+      if (inc && inc.status === 'accepted') {
+        // Institution accepted! Remove from hold
+        sessionOnHold.delete(sessionId);
+        return NextResponse.json({
+          text: 'Aapki call ab rescue team se connect ho rahi hai. Shukriya intezaar karne ka.',
+          transcript: userText,
+          toolCall: null,
+          incident_id: existingId,
+          accepted: true,
+        });
+      }
+    }
+
+    // Still on hold — send a reassuring message
+    const holdMsg = HOLD_MESSAGES[Math.floor(Math.random() * HOLD_MESSAGES.length)];
+    return NextResponse.json({
+      text: holdMsg,
+      transcript: userText,
+      toolCall: null,
+      incident_id: existingId,
+      onHold: true,
+    });
+  }
+
+  // If session already has an incident, just continue conversation
   if (sessionIncidentMap.has(sessionId)) {
     const existingId = sessionIncidentMap.get(sessionId)!;
-    console.log('[VOICE-CHAT] Session already has incident:', existingId.substring(0, 8));
-
-    // Just continue conversation, no new incident
     const { text: aiText } = await getAIResponse(sessionId, userText);
-
     return NextResponse.json({
       text: aiText,
       transcript: userText,
@@ -54,15 +97,13 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Step 2: Get AI response
+  // Get AI response
   const { text: aiText, toolCall } = await getAIResponse(sessionId, userText);
-
   let incident_id: string | null = null;
 
-  // Step 3: If tool was called AND no incident exists for this session
+  // Tool call — create incident
   if (toolCall) {
-    console.log('[VOICE-CHAT] Tool call detected:', JSON.stringify(toolCall));
-
+    console.log('[VOICE-CHAT] Tool call:', JSON.stringify(toolCall));
     const supabase = createServiceClient();
 
     const landmark = (toolCall.landmark as string) || 'GPS Location';
@@ -70,15 +111,10 @@ export async function POST(req: NextRequest) {
     const severity = Math.min(5, Math.max(1, (toolCall.severity as number) || 3));
     const summary = (toolCall.summary as string) || userText;
 
-    // Create incident with GPS coords
     const { data: incident } = await supabase
       .from('incidents')
       .insert({
-        transcript: userText,
-        summary,
-        incident_type,
-        severity,
-        landmark,
+        transcript: userText, summary, incident_type, severity, landmark,
         status: 'intake',
         ...(lat && lng ? { lat, lng } : {}),
       })
@@ -87,11 +123,10 @@ export async function POST(req: NextRequest) {
 
     if (incident) {
       incident_id = incident.id;
-      // Store session → incident mapping to prevent duplicates
       sessionIncidentMap.set(sessionId, incident.id);
-      setTimeout(() => sessionIncidentMap.delete(sessionId), 600000); // cleanup after 10 min
+      setTimeout(() => { sessionIncidentMap.delete(sessionId); sessionOnHold.delete(sessionId); }, 600000);
 
-      console.log('[VOICE-CHAT] Incident created:', incident.id, '(session locked)');
+      console.log('[VOICE-CHAT] Incident created:', incident.id);
 
       // Run LangGraph
       try {
@@ -102,8 +137,37 @@ export async function POST(req: NextRequest) {
         });
 
         const lm = result.landmark_match;
-        const resultMsg = `Edhi Foundation ko ${lm?.name || landmark} ke liye notify kar diya. Rescue team aa rahi hai.`;
 
+        // Check if institution is currently busy
+        const { data: activeAccepted } = await supabase
+          .from('incidents')
+          .select('id')
+          .in('status', ['accepted', 'en_route'])
+          .neq('id', incident.id)
+          .limit(1);
+
+        const institutionBusy = (activeAccepted?.length ?? 0) > 0;
+
+        if (institutionBusy) {
+          // Institution is busy — put this civilian on hold
+          sessionOnHold.add(sessionId);
+          console.log('[VOICE-CHAT] Institution busy — civilian on hold');
+
+          const resultMsg = `Aapki emergency ${lm?.name || landmark} pe record ho gayi hai. Rescue team abhi ek aur call pe hai. Aap ka number agla hai — please hold karein.`;
+          injectToolResult(sessionId, resultMsg);
+
+          return NextResponse.json({
+            text: resultMsg,
+            transcript: userText,
+            toolCall,
+            incident_id,
+            status: result.status,
+            onHold: true,
+          });
+        }
+
+        // Institution available — normal flow
+        const resultMsg = `Edhi Foundation ko ${lm?.name || landmark} ke liye notify kar diya. Rescue team aa rahi hai.`;
         injectToolResult(sessionId, resultMsg);
 
         return NextResponse.json({
@@ -117,7 +181,6 @@ export async function POST(req: NextRequest) {
         console.error('[VOICE-CHAT] Graph error:', err);
         const fallbackMsg = 'Emergency record ho gayi hai. Edhi Foundation ko contact kiya ja raha hai.';
         injectToolResult(sessionId, fallbackMsg);
-
         return NextResponse.json({
           text: `${aiText} ${fallbackMsg}`,
           transcript: userText,
