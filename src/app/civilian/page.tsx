@@ -275,6 +275,22 @@ export default function CivilianPage() {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'incidents',
+        },
+        (payload) => {
+          // payload.old contains the deleted record's primary key
+          if (payload.old && payload.old.id === store.incidentId) {
+            console.log('[CIVILIAN] Incident deleted remotely!');
+            const wasOnScene = store.agentStatus === 'on_scene' || store.incident?.status === 'on_scene' || store.incident?.status === 'resolved';
+            setPhase(wasOnScene ? 'completed' : 'cancelled');
+          }
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
