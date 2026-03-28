@@ -272,10 +272,55 @@ export default function InstitutionDashboard() {
         } catch (err) {
           console.error('[SIM] Step error:', err);
         }
-      }, 2000);
+      }, 800); // Fast for demo
     });
 
     return () => intervals.forEach(clearInterval);
+  }, [allIncidents]);
+
+  // On-scene → wait 5s → start return trip
+  useEffect(() => {
+    const onScene = allIncidents.filter(i => i.status === 'on_scene' && i.assigned_resource);
+    if (onScene.length === 0) return;
+
+    const timeouts = onScene.map(incident =>
+      setTimeout(async () => {
+        console.log(`[SIM] ${incident.id.substring(0,8)} returning to station`);
+        await fetch('/api/simulate/return', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ incident_id: incident.id }),
+        });
+      }, 5000)
+    );
+
+    return () => timeouts.forEach(clearTimeout);
+  }, [allIncidents]);
+
+  // Return trip → fast poll back to station
+  useEffect(() => {
+    const returning = allIncidents.filter(i => i.status === 'returning' && i.assigned_resource);
+    if (returning.length === 0) return;
+
+    const intervals = returning.map(incident =>
+      setInterval(async () => {
+        try {
+          const res = await fetch('/api/simulate/return', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ incident_id: incident.id }),
+          });
+          const data = await res.json();
+          if (data.done) {
+            console.log(`[SIM] ${incident.id.substring(0,8)} back at station`);
+            store.finishCall();
+          }
+        } catch { /* ignore */ }
+      }, 600) // Even faster return
+    );
+
+    return () => intervals.forEach(clearInterval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allIncidents]);
 
   // Handle accept/reject
