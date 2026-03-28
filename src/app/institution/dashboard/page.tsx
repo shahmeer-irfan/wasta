@@ -497,28 +497,18 @@ export default function InstitutionDashboard() {
                         </div>
                       ) : null}
 
-                      {/* Summary + Call button — expanded view */}
+                      {/* Summary — expanded view */}
                       <AnimatePresence>
-                        {isSelected && (
+                        {isSelected && incident.summary && (
                           <motion.div
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
                             className="overflow-hidden"
                           >
-                            {incident.summary && (
-                              <p className="text-xs text-zinc-600 leading-relaxed italic mb-2 bg-orange-100/40 rounded-lg p-2.5 border border-orange-200/30">
-                                &ldquo;{incident.summary}&rdquo;
-                              </p>
-                            )}
-                            {/* Quick call button — connect to civilian directly */}
-                            <div className="mb-2" onClick={(e) => e.stopPropagation()}>
-                              <VoiceChat
-                                incidentId={incident.id}
-                                role="institution"
-                                peerLabel="Civilian"
-                              />
-                            </div>
+                            <p className="text-xs text-zinc-600 leading-relaxed italic mb-2 bg-orange-100/40 rounded-lg p-2.5 border border-orange-200/30">
+                              &ldquo;{incident.summary}&rdquo;
+                            </p>
                           </motion.div>
                         )}
                       </AnimatePresence>
@@ -659,11 +649,12 @@ export default function InstitutionDashboard() {
                     </span>
                   </div>
 
-                  {/* Voice chat — user clicks to connect */}
+                  {/* Voice chat — auto-connects when accepted */}
                   <VoiceChat
                     incidentId={dispatchable.id}
                     role="institution"
                     peerLabel="Civilian"
+                    autoConnect
                   />
 
                   {!isDispatched ? (
