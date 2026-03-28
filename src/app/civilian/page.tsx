@@ -124,7 +124,8 @@ export default function CivilianPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript: transcript.trim(),
-          caller_phone: '+92-300-1234567',
+          lat: userLocation?.lat || null,
+          lng: userLocation?.lng || null,
         }),
       });
 
@@ -728,6 +729,8 @@ export default function CivilianPage() {
                   lng: store.incident.lng,
                 } : null}
                 zoom={14}
+                routeWaypoints={store.incident?.route_waypoints}
+                routeProgressStep={store.incident?.route_progress_step}
               />
 
               {/* Top overlay */}

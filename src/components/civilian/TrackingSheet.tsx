@@ -61,26 +61,72 @@ export default function TrackingSheet({
           </div>
         </div>
 
-        {/* ETA */}
+        {/* ETA — uses real OSRM data when available */}
         <div className="text-right">
-          {eta !== null ? (
+          {incident.route_duration_min ? (
             <div>
               <motion.div
-                className="text-2xl font-bold text-emerald-400"
+                className="text-2xl font-bold text-emerald-600"
+                animate={{ opacity: [1, 0.6, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                {Math.max(0, Math.round(
+                  incident.route_duration_min *
+                  (1 - (incident.route_progress_step ?? 0) /
+                    Math.max(1, (incident.route_waypoints?.length ?? 1) - 1))
+                ))} min
+              </motion.div>
+              <div className="text-[10px] text-gray-500 flex items-center gap-1 justify-end">
+                <Clock className="w-3 h-3" />
+                {incident.route_distance_km}km
+              </div>
+            </div>
+          ) : eta !== null ? (
+            <div>
+              <motion.div
+                className="text-2xl font-bold text-emerald-600"
                 animate={{ opacity: [1, 0.6, 1] }}
                 transition={{ duration: 2, repeat: Infinity }}
               >
                 {Math.ceil(eta / 60)} min
               </motion.div>
-              <div className="text-[10px] text-zinc-500 flex items-center gap-1">
+              <div className="text-[10px] text-gray-500 flex items-center gap-1 justify-end">
                 <Clock className="w-3 h-3" /> ETA
               </div>
             </div>
           ) : (
-            <div className="text-sm text-zinc-500">Calculating...</div>
+            <div className="text-sm text-gray-400">Calculating...</div>
           )}
         </div>
       </div>
+
+      {/* Route progress bar */}
+      {incident.route_waypoints && incident.route_waypoints.length > 1 && (
+        <div className="mb-3">
+          <div className="flex justify-between text-[10px] text-gray-400 mb-1.5">
+            <span>Ambulance en route</span>
+            <span>
+              {Math.round(
+                ((incident.route_progress_step ?? 0) /
+                  Math.max(1, incident.route_waypoints.length - 1)) * 100
+              )}%
+            </span>
+          </div>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-gradient-to-r from-orange-500 to-orange-400 rounded-full"
+              initial={{ width: '0%' }}
+              animate={{
+                width: `${Math.round(
+                  ((incident.route_progress_step ?? 0) /
+                    Math.max(1, incident.route_waypoints.length - 1)) * 100
+                )}%`
+              }}
+              transition={{ duration: 1.5, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Status timeline */}
       <div className="space-y-0">

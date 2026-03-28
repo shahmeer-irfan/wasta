@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/client';
 import { simulateMovement } from '@/lib/simulation';
+import { fetchOSRMRoute, straightLineWaypoints } from '@/lib/routing';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,6 @@ export async function POST(req: NextRequest) {
   console.log('[DISPATCH] incident:', incident_id, 'institute:', institute_id);
 
   if (!incident_id || !institute_id) {
-    console.error('[DISPATCH] Missing params');
     return NextResponse.json({ error: 'Missing incident_id or institute_id' }, { status: 400 });
   }
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Incident not found' }, { status: 404 });
   }
 
-  // Find available resource from this institute
+  // Find available resource
   const { data: resource } = await supabase
     .from('resources')
     .select('*')
@@ -41,7 +41,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No available resources' }, { status: 409 });
   }
 
-  // Assign resource + mark dispatched
+  const targetLat = incident.lat ?? 24.8607;
+  const targetLng = incident.lng ?? 67.0011;
+
+  // ── Fetch real road route from OSRM ──
+  console.log('[DISPATCH] Fetching OSRM route...');
+  const osrmRoute = await fetchOSRMRoute(resource.lat, resource.lng, targetLat, targetLng);
+
+  let waypoints: [number, number][];
+  let distanceKm: number;
+  let durationMin: number;
+
+  if (osrmRoute) {
+    waypoints = osrmRoute.waypoints;
+    distanceKm = osrmRoute.distanceKm;
+    durationMin = osrmRoute.durationMin;
+    console.log(`[DISPATCH] OSRM route: ${distanceKm}km, ${durationMin}min, ${waypoints.length} waypoints`);
+  } else {
+    waypoints = straightLineWaypoints(resource.lat, resource.lng, targetLat, targetLng, 25);
+    distanceKm = Math.round(Math.sqrt(
+      Math.pow((targetLat - resource.lat) * 111, 2) +
+      Math.pow((targetLng - resource.lng) * 111 * Math.cos(resource.lat * Math.PI / 180), 2)
+    ) * 10) / 10;
+    durationMin = Math.max(1, Math.round((distanceKm / 30) * 60));
+    console.log(`[DISPATCH] Straight-line fallback: ${distanceKm}km, ${durationMin}min`);
+  }
+
+  // Assign resource + store route + mark dispatched
   await supabase.from('resources')
     .update({ status: 'dispatched', updated_at: new Date().toISOString() })
     .eq('id', resource.id);
@@ -50,23 +76,20 @@ export async function POST(req: NextRequest) {
     .update({
       assigned_resource: resource.id,
       status: 'dispatched',
+      route_waypoints: waypoints,
+      route_distance_km: distanceKm,
+      route_duration_min: durationMin,
+      route_progress_step: 0,
       updated_at: new Date().toISOString(),
     })
     .eq('id', incident_id);
 
-  // Start simulation (non-blocking)
-  const targetLat = incident.lat ?? 24.8607;
-  const targetLng = incident.lng ?? 67.0011;
-
+  // Start simulation along waypoints (non-blocking)
   simulateMovement({
     resourceId: resource.id,
     incidentId: incident_id,
-    startLat: resource.lat,
-    startLng: resource.lng,
-    targetLat,
-    targetLng,
+    waypoints,
     intervalMs: 2000,
-    steps: 25,
   }).catch(console.error);
 
   return NextResponse.json({
@@ -74,5 +97,8 @@ export async function POST(req: NextRequest) {
     resource_id: resource.id,
     call_sign: resource.call_sign,
     incident_id,
+    route_distance_km: distanceKm,
+    route_duration_min: durationMin,
+    waypoint_count: waypoints.length,
   });
 }

@@ -38,6 +38,10 @@ export interface Incident {
   accepted_by: string | null;
   assigned_resource: string | null;
   exclude_list: string[];
+  route_waypoints: [number, number][] | null;
+  route_distance_km: number | null;
+  route_duration_min: number | null;
+  route_progress_step: number | null;
   created_at: string;
   updated_at: string;
 }

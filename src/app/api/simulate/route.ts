@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { simulateMovement } from '@/lib/simulation';
 import { createServiceClient } from '@/lib/supabase/client';
+import { straightLineWaypoints } from '@/lib/routing';
 
 export const dynamic = 'force-dynamic';
 
+// Legacy simulation endpoint — dispatch route now handles this directly
 export async function POST(req: NextRequest) {
-  const { resourceId, targetLat, targetLng } = await req.json();
+  const { resourceId, incidentId, targetLat, targetLng } = await req.json();
+
+  if (!resourceId) {
+    return NextResponse.json({ error: 'Missing resourceId' }, { status: 400 });
+  }
 
   const supabase = createServiceClient();
 
-  // Get current resource position
   const { data: resource } = await supabase
     .from('resources')
     .select('*')
@@ -20,15 +25,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
   }
 
-  // Run simulation in background (non-blocking)
+  const waypoints = straightLineWaypoints(
+    resource.lat, resource.lng,
+    targetLat ?? resource.lat, targetLng ?? resource.lng,
+    25
+  );
+
   simulateMovement({
     resourceId,
-    startLat: resource.lat,
-    startLng: resource.lng,
-    targetLat,
-    targetLng,
+    incidentId: incidentId || '',
+    waypoints,
     intervalMs: 2000,
-    steps: 25,
   }).catch(console.error);
 
   return NextResponse.json({ status: 'simulation_started', resourceId });

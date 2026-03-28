@@ -73,18 +73,22 @@ export default function InstitutionDashboard() {
   // Initialize — always fetch fresh institute from DB
   useEffect(() => {
     async function init() {
-      // Always fetch the first institute from DB (ignores stale localStorage)
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('institutes')
         .select('*')
         .eq('is_available', true)
         .limit(1)
         .single();
 
+      console.log('[DASHBOARD] Institute fetch:', data?.name || 'NONE', error?.message || '');
+
       if (data) {
         localStorage.setItem(DEMO_INSTITUTE_ID_KEY, data.id);
         setInstitute(data as Institute);
         setInstituteId(data.id);
+        console.log('[DASHBOARD] Institute ID set:', data.id.substring(0, 8));
+      } else {
+        console.error('[DASHBOARD] No institute found! Run schema_v2.sql in Supabase.');
       }
     }
     init();
@@ -136,6 +140,8 @@ export default function InstitutionDashboard() {
   useEffect(() => {
     if (!instituteId) return;
 
+    console.log('[DASHBOARD] Subscribing to broadcasts for institute:', instituteId.substring(0, 8));
+
     const channel = supabase
       .channel(`broadcasts-${instituteId}`)
       .on(
@@ -147,6 +153,7 @@ export default function InstitutionDashboard() {
           filter: `institute_id=eq.${instituteId}`,
         },
         async (payload) => {
+          console.log('[DASHBOARD] ★ NEW BROADCAST received!', payload.new);
           const broadcast = payload.new as IncidentBroadcast;
 
           const { data: incident } = await supabase
@@ -154,6 +161,8 @@ export default function InstitutionDashboard() {
             .select('*')
             .eq('id', broadcast.incident_id)
             .single();
+
+          console.log('[DASHBOARD] Incident for broadcast:', incident?.id?.substring(0, 8), incident?.status);
 
           if (incident) {
             store.setActiveBroadcast({
@@ -358,6 +367,14 @@ export default function InstitutionDashboard() {
             center={institute ? { lat: institute.lat, lng: institute.lng } : undefined}
             markers={mapMarkers}
             zoom={14}
+            routeWaypoints={(() => {
+              const d = activeIncidents.find(i => i.route_waypoints);
+              return d?.route_waypoints ?? null;
+            })()}
+            routeProgressStep={(() => {
+              const d = activeIncidents.find(i => i.route_waypoints);
+              return d?.route_progress_step ?? null;
+            })()}
           />
           <div className="absolute bottom-4 left-4 z-[1000] flex flex-col gap-1 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg p-2.5 shadow-sm">
             {[

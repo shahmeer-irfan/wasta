@@ -1,7 +1,9 @@
 'use client';
 
-import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls } from '@/components/ui/map';
+import { useMemo } from 'react';
+import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls, MapRoute } from '@/components/ui/map';
 import { KARACHI_CENTER } from '@/lib/constants';
+import { waypointsToGeoJSON } from '@/lib/routing';
 
 export interface MapMarkerData {
   lat: number;
@@ -10,7 +12,6 @@ export interface MapMarkerData {
   popup?: string;
 }
 
-// Re-export for backward compat
 export type { MapMarkerData as MapMarker };
 
 const ICON_STYLES: Record<string, { bg: string; border: string; size: string; ping?: boolean }> = {
@@ -26,6 +27,9 @@ interface WaastaMapProps {
   markers?: MapMarkerData[];
   flyTo?: { lat: number; lng: number } | null;
   className?: string;
+  // Route props
+  routeWaypoints?: [number, number][] | null;  // [lat, lng] pairs
+  routeProgressStep?: number | null;
 }
 
 export default function WaastaMap({
@@ -33,7 +37,24 @@ export default function WaastaMap({
   zoom = 13,
   markers = [],
   className = 'h-full w-full',
+  routeWaypoints,
+  routeProgressStep,
 }: WaastaMapProps) {
+  // Convert waypoints to GeoJSON [lng, lat] for MapLibre
+  const fullRouteCoords = useMemo(() => {
+    if (!routeWaypoints || routeWaypoints.length < 2) return null;
+    return waypointsToGeoJSON(routeWaypoints);
+  }, [routeWaypoints]);
+
+  const progressCoords = useMemo(() => {
+    if (!routeWaypoints || routeWaypoints.length < 2) return null;
+    const step = routeProgressStep ?? 0;
+    if (step < 1) return null;
+    const travelled = routeWaypoints.slice(0, step + 1);
+    if (travelled.length < 2) return null;
+    return waypointsToGeoJSON(travelled);
+  }, [routeWaypoints, routeProgressStep]);
+
   return (
     <div className={className}>
       <Map
@@ -43,6 +64,27 @@ export default function WaastaMap({
       >
         <MapControls position="bottom-right" showZoom />
 
+        {/* Full route — light gray dashed line */}
+        {fullRouteCoords && (
+          <MapRoute
+            coordinates={fullRouteCoords}
+            color="#d1d5db"
+            width={5}
+            opacity={0.6}
+          />
+        )}
+
+        {/* Progress line — orange, shows distance covered */}
+        {progressCoords && (
+          <MapRoute
+            coordinates={progressCoords}
+            color="#ea580c"
+            width={5}
+            opacity={1}
+          />
+        )}
+
+        {/* Markers */}
         {markers.map((m, i) => {
           const style = ICON_STYLES[m.iconType || 'default'];
           return (
@@ -53,7 +95,6 @@ export default function WaastaMap({
             >
               <MarkerContent>
                 <div className="relative flex items-center justify-center">
-                  {/* Ping animation for incidents */}
                   {style.ping && (
                     <div className={`absolute ${style.size} rounded-full ${style.bg} opacity-40 animate-ping`} />
                   )}

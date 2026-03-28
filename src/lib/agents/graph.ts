@@ -33,10 +33,21 @@ export type WaastaStateType = typeof WaastaState.State;
 async function intakeNode(state: WaastaStateType): Promise<Partial<WaastaStateType>> {
   const { transcript, incident_id } = state;
 
-  try {
-    console.log('[GRAPH:INTAKE] Parsing transcript for incident', incident_id);
-    console.log('[GRAPH:INTAKE] Transcript:', transcript.substring(0, 100));
+  console.log('[GRAPH:INTAKE] Parsing transcript for incident', incident_id);
+  console.log('[GRAPH:INTAKE] Transcript:', transcript.substring(0, 100));
 
+  const supabase = createServiceClient();
+
+  // Fetch existing incident to get GPS coords stored by trigger
+  const { data: existingIncident } = await supabase
+    .from('incidents')
+    .select('lat, lng')
+    .eq('id', incident_id)
+    .single();
+
+  let card: IncidentCard;
+
+  try {
     const response = await fetch(`${getBaseUrl()}/api/ai/parse-incident`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,26 +55,41 @@ async function intakeNode(state: WaastaStateType): Promise<Partial<WaastaStateTy
     });
 
     if (!response.ok) throw new Error(`Parse API ${response.status}`);
-    const card: IncidentCard = await response.json();
-
+    card = await response.json();
     console.log('[GRAPH:INTAKE] Parsed →', JSON.stringify(card));
-
-    const supabase = createServiceClient();
-    await supabase.from('incidents').update({
-      transcript,
-      summary: card.summary,
-      incident_type: card.incident_type,
-      severity: card.severity,
-      landmark: card.landmark,
-      status: 'intake',
-      updated_at: new Date().toISOString(),
-    }).eq('id', incident_id);
-
-    return { incident_card: card, status: 'geocoding' };
   } catch (err) {
-    console.error('[GRAPH:INTAKE] FAILED:', err);
-    return { error: `Intake failed: ${err}`, status: 'error' };
+    console.error('[GRAPH:INTAKE] Groq failed, using fallback:', err);
+    // Fallback: basic card from transcript keywords
+    card = {
+      incident_type: transcript.toLowerCase().includes('fire') ? 'fire'
+        : transcript.toLowerCase().includes('accident') ? 'accident'
+        : 'medical',
+      summary: transcript.substring(0, 150),
+      severity: 3,
+      landmark: null,
+      zone: null,
+      lat: existingIncident?.lat || null,
+      lng: existingIncident?.lng || null,
+    };
   }
+
+  // Inherit GPS coords from trigger if card doesn't have them
+  if (!card.lat && existingIncident?.lat) {
+    card.lat = existingIncident.lat;
+    card.lng = existingIncident.lng;
+  }
+
+  await supabase.from('incidents').update({
+    transcript,
+    summary: card.summary,
+    incident_type: card.incident_type,
+    severity: card.severity,
+    landmark: card.landmark,
+    status: 'intake',
+    updated_at: new Date().toISOString(),
+  }).eq('id', incident_id);
+
+  return { incident_card: card, status: 'geocoding' };
 }
 
 // ── NODE 2: GEOCODE — Match landmark to coordinates ─────────
@@ -127,22 +153,32 @@ async function geocodeNode(state: WaastaStateType): Promise<Partial<WaastaStateT
       updated_at: new Date().toISOString(),
     }).eq('id', incident_id);
   } else {
-    // No match — use Karachi center, still mark geocoded
+    // No landmark match — use incident's GPS coords (from trigger) or Karachi center
+    const fallbackLat = incident_card.lat ?? 24.8607;
+    const fallbackLng = incident_card.lng ?? 67.0011;
+    console.log('[GRAPH:GEOCODE] No landmark match, using fallback coords:', fallbackLat, fallbackLng);
+
     await supabase.from('incidents').update({
-      lat: 24.8607,
-      lng: 67.0011,
-      landmark: incident_card.landmark || 'Unknown',
+      lat: fallbackLat,
+      lng: fallbackLng,
+      landmark: incident_card.landmark || 'GPS Location',
       status: 'geocoded',
       updated_at: new Date().toISOString(),
     }).eq('id', incident_id);
   }
 
+  // Use matched coords, or existing GPS, or Karachi center
+  const finalLat = bestMatch?.lat ?? incident_card.lat ?? 24.8607;
+  const finalLng = bestMatch?.lng ?? incident_card.lng ?? 67.0011;
+
+  console.log('[GRAPH:GEOCODE] Final coords:', finalLat, finalLng, bestMatch ? '(landmark)' : incident_card.lat ? '(GPS)' : '(default)');
+
   return {
     landmark_match: bestMatch,
     incident_card: {
       ...incident_card,
-      lat: bestMatch?.lat ?? 24.8607,
-      lng: bestMatch?.lng ?? 67.0011,
+      lat: finalLat,
+      lng: finalLng,
       zone: bestMatch?.zone ?? null,
       landmark: bestMatch?.name ?? incident_card.landmark,
     },
