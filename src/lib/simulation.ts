@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase/client';
 
 interface SimulationConfig {
   resourceId: string;
+  incidentId?: string;
   startLat: number;
   startLng: number;
   targetLat: number;
@@ -22,12 +23,13 @@ function lerp(a: number, b: number, t: number): number {
 
 export async function simulateMovement({
   resourceId,
+  incidentId,
   startLat,
   startLng,
   targetLat,
   targetLng,
   intervalMs = 2000,
-  steps = 30,
+  steps = 25,
 }: SimulationConfig): Promise<void> {
   const supabase = createServiceClient();
 
@@ -35,15 +37,32 @@ export async function simulateMovement({
     const t = i / steps;
     const lat = lerp(startLat, targetLat, t);
     const lng = lerp(startLng, targetLng, t);
+    const isLast = i === steps;
+    const status = isLast ? 'on_scene' : 'en_route';
 
     await supabase.from('resources').update({
       lat,
       lng,
-      status: i === steps ? 'on_scene' : 'en_route',
+      status,
       updated_at: new Date().toISOString(),
     }).eq('id', resourceId);
 
-    if (i < steps) {
+    // Update incident status to match resource movement
+    if (incidentId) {
+      if (i === 1) {
+        await supabase.from('incidents').update({
+          status: 'en_route',
+          updated_at: new Date().toISOString(),
+        }).eq('id', incidentId);
+      } else if (isLast) {
+        await supabase.from('incidents').update({
+          status: 'on_scene',
+          updated_at: new Date().toISOString(),
+        }).eq('id', incidentId);
+      }
+    }
+
+    if (!isLast) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
   }

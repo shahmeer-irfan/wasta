@@ -12,14 +12,12 @@ import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import BroadcastModal from '@/components/institution/BroadcastModal';
-import CallPanel from '@/components/institution/CallPanel';
+import VoiceChat from '@/components/shared/VoiceChat';
 import { useInstitutionStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '@/lib/constants';
 import type { MapMarker } from '@/components/maps/WaastaMap';
 import type { Incident, IncidentBroadcast, Institute, Resource } from '@/types';
-
-const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 
 const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
   ssr: false,
@@ -72,32 +70,22 @@ export default function InstitutionDashboard() {
     return () => clearInterval(id);
   }, []);
 
-  // Initialize — fetch or assign institute
+  // Initialize — always fetch fresh institute from DB
   useEffect(() => {
     async function init() {
-      let id = localStorage.getItem(DEMO_INSTITUTE_ID_KEY);
+      // Always fetch the first institute from DB (ignores stale localStorage)
+      const { data } = await supabase
+        .from('institutes')
+        .select('*')
+        .eq('is_available', true)
+        .limit(1)
+        .single();
 
-      if (!id) {
-        const { data } = await supabase
-          .from('institutes')
-          .select('*')
-          .limit(1)
-          .single();
-        if (data) {
-          id = data.id;
-          localStorage.setItem(DEMO_INSTITUTE_ID_KEY, id!);
-          setInstitute(data as Institute);
-        }
-      } else {
-        const { data } = await supabase
-          .from('institutes')
-          .select('*')
-          .eq('id', id)
-          .single();
-        if (data) setInstitute(data as Institute);
+      if (data) {
+        localStorage.setItem(DEMO_INSTITUTE_ID_KEY, data.id);
+        setInstitute(data as Institute);
+        setInstituteId(data.id);
       }
-
-      if (id) setInstituteId(id);
     }
     init();
   }, []);
@@ -119,8 +107,29 @@ export default function InstitutionDashboard() {
 
       if (resRes.data) setResources(resRes.data as Resource[]);
       if (incRes.data) setAllIncidents(incRes.data as Incident[]);
+
+      // Check for any PENDING broadcasts that already exist (page loaded late)
+      const { data: pendingBroadcasts } = await supabase
+        .from('incident_broadcasts')
+        .select('*, incidents(*)')
+        .eq('institute_id', instituteId!)
+        .eq('status', 'pending')
+        .order('sent_at', { ascending: false })
+        .limit(1);
+
+      if (pendingBroadcasts?.length) {
+        const b = pendingBroadcasts[0];
+        const inc = (b as Record<string, unknown>).incidents;
+        if (inc) {
+          store.setActiveBroadcast({
+            ...b,
+            incidents: inc as Incident,
+          });
+        }
+      }
     }
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instituteId]);
 
   // Listen for new broadcasts targeting this institute
@@ -259,10 +268,17 @@ export default function InstitutionDashboard() {
     ['dispatched', 'en_route'].includes(r.status)
   ).length;
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const selectedIncidentData = selectedIncident ? activeIncidents.find(i => i.id === selectedIncident) : null;
-  const flyToPos = selectedIncidentData?.lat && selectedIncidentData?.lng
-    ? { lat: selectedIncidentData.lat, lng: selectedIncidentData.lng }
-    : undefined;
+
+  const onSceneCount = resources.filter(r => r.status === 'on_scene').length;
+
+  const statTiles = [
+    { label: 'Active', value: activeIncidents.length, color: '#dc2626', bg: '#fef2f2' },
+    { label: 'Deployed', value: dispatchedCount, color: '#ea580c', bg: '#fff7ed' },
+    { label: 'On Scene', value: onSceneCount, color: '#16a34a', bg: '#f0fdf4' },
+    { label: 'Available', value: availableCount, color: '#2563eb', bg: '#eff6ff' },
+  ];
 
   return (
     <div className="h-screen w-screen bg-white flex flex-col overflow-hidden">
@@ -279,102 +295,86 @@ export default function InstitutionDashboard() {
       </AnimatePresence>
 
       {/* ── Top Bar ─────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-5 py-3 border-b border-orange-200/60 bg-white/90 backdrop-blur-sm shrink-0 gap-3 sm:gap-0">
+      <div className="flex items-center justify-between px-6 h-14 border-b border-gray-200 bg-white shrink-0">
         <div className="flex items-center gap-3">
           <Link href="/">
-            <div className="w-8 h-8 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center hover:bg-orange-100 transition-colors cursor-pointer shrink-0">
+            <div className="w-8 h-8 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center hover:bg-orange-100 transition-colors cursor-pointer">
               <ChevronLeft className="w-4 h-4 text-orange-600" />
             </div>
           </Link>
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden relative shadow-sm border border-orange-200/50">
+          <div className="w-8 h-8 rounded-lg overflow-hidden relative shadow-sm border border-orange-200/50 shrink-0">
             <Image src="/logo.png" alt="Waasta" fill className="object-cover" />
           </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-bold text-zinc-900 tracking-tight leading-none truncate">
-              WAASTA WAR ROOM
+          <div>
+            <h1 className="text-[15px] font-bold text-gray-900 tracking-tight leading-none">
+              WAASTA War Room
             </h1>
-            <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
-              {institute ? (
-                <>{institute.name} · {institute.zone}</>
-              ) : (
-                <span className="flex items-center gap-1">
-                  <Loader2 className="w-2.5 h-2.5 animate-spin" /> Loading...
-                </span>
-              )}
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {institute ? `${institute.name} · ${institute.zone}` : 'Loading...'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Live indicator */}
-          <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-5">
+          <div className="flex items-center gap-1.5">
             <motion.div
-              className="w-2 h-2 rounded-full bg-emerald-500"
+              className="w-[6px] h-[6px] rounded-full bg-emerald-500"
               animate={{ opacity: [1, 0.3, 1] }}
               transition={{ duration: 2, repeat: Infinity }}
             />
-            <span className="text-xs font-medium text-zinc-600 hidden sm:inline">LIVE</span>
+            <span className="text-[11px] font-semibold text-gray-500 tracking-wide">LIVE</span>
           </div>
-
-          <div className="w-px h-5 bg-orange-100 shrink-0 hidden sm:block" />
-
-          <Badge variant="outline" className="text-emerald-400 border-emerald-600/30 bg-emerald-600/5 gap-1.5 text-xs shrink-0 whitespace-nowrap">
-            <Ambulance className="w-3 h-3" />
-            {availableCount} Avail
-          </Badge>
-          <Badge variant="outline" className="text-amber-400 border-amber-600/30 bg-amber-600/5 gap-1.5 text-xs shrink-0 whitespace-nowrap">
-            <Radio className="w-3 h-3" />
-            {dispatchedCount} Disp
-          </Badge>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-50 border border-green-200">
+            <Ambulance className="w-3.5 h-3.5 text-green-600" />
+            <span className="text-[11px] font-bold text-green-700">{availableCount} Avail</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200">
+            <Radio className="w-3.5 h-3.5 text-amber-600" />
+            <span className="text-[11px] font-bold text-amber-700">{dispatchedCount} Disp</span>
+          </div>
         </div>
       </div>
 
-      {/* ── Stats Strip ─────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-px border-b border-orange-200/60 shrink-0 bg-orange-200/60 overflow-hidden">
-        {[
-          { label: 'Active', value: activeIncidents.length, color: 'text-orange-600' },
-          { label: 'Resources', value: resources.length, color: 'text-zinc-500' },
-          { label: 'On Scene', value: resources.filter(r => r.status === 'on_scene').length, color: 'text-blue-500' },
-          { label: 'Returning', value: resources.filter(r => r.status === 'returning').length, color: 'text-zinc-600' },
-        ].map((stat) => (
-          <div key={stat.label} className="px-1 sm:px-4 py-2 text-center bg-white flex flex-col items-center justify-center">
-            <div className={`text-sm sm:text-lg font-bold ${stat.color}`}>{stat.value}</div>
-            <div className="text-[8px] sm:text-[10px] text-zinc-500 uppercase tracking-widest truncate w-full">{stat.label}</div>
+      {/* ── Stats Bar ──────────────────────────────────────── */}
+      <div className="grid grid-cols-4 border-b border-gray-200 shrink-0">
+        {statTiles.map((tile, i) => (
+          <div key={tile.label} className={`flex items-center gap-3.5 px-5 py-3 bg-white ${i < 3 ? 'border-r border-gray-100' : ''}`}>
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tile.bg }}>
+              <div className="w-3.5 h-3.5 rounded-full" style={{ background: tile.color }} />
+            </div>
+            <div>
+              <div className="text-2xl font-bold leading-none tabular-nums" style={{ color: tile.color }}>{tile.value}</div>
+              <div className="text-[10px] text-gray-400 mt-1 font-medium tracking-wide uppercase">{tile.label}</div>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* ── Main Content ─────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
+      {/* ── Main Content: Map + Sidebar (fixed grid) ─────────── */}
+      <div className="flex-1 grid grid-cols-[1fr_360px] overflow-hidden">
         {/* Map */}
-        <div className="flex-1 relative min-h-[40vh] md:min-h-0 bg-orange-50">
-          <WaastaMap markers={mapMarkers} zoom={12} flyTo={flyToPos} />
-
-          {/* Map legend */}
-          <div className="absolute bottom-4 left-4 right-4 md:right-auto z-[1000] flex md:flex-col gap-1.5 bg-white/90 backdrop-blur-sm border border-orange-200/60 rounded-xl p-2 md:p-3 overflow-x-auto shadow-sm">
+        <div className="relative overflow-hidden">
+          <WaastaMap
+            center={institute ? { lat: institute.lat, lng: institute.lng } : undefined}
+            markers={mapMarkers}
+            zoom={14}
+          />
+          <div className="absolute bottom-4 left-4 z-[1000] flex flex-col gap-1 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg p-2.5 shadow-sm">
             {[
               { color: '#dc2626', label: 'Incident' },
               { color: '#22c55e', label: 'Available' },
               { color: '#3b82f6', label: 'Station' },
             ].map((item) => (
-              <div key={item.label} className="flex items-center gap-1.5 shrink-0 pr-2 md:pr-0 border-r md:border-r-0 border-orange-200/50 last:border-0">
-                <div
-                  className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full"
-                  style={{ backgroundColor: item.color, boxShadow: `0 0 6px ${item.color}88` }}
-                />
-                <span className="text-[9px] md:text-[10px] text-zinc-600">{item.label}</span>
+              <div key={item.label} className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: item.color, boxShadow: `0 0 6px ${item.color}44` }} />
+                <span className="text-[10px] text-gray-500 font-medium">{item.label}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── Sidebar / Bottom Sheet ──────────────────────────── */}
-        <div className="w-full md:w-80 h-[45vh] md:h-auto border-t md:border-t-0 md:border-l border-orange-200/60 flex flex-col bg-white shrink-0 shadow-[0_-4px_25px_-5px_rgba(0,0,0,0.1)] md:shadow-none z-10">
-          
-          {/* Mobile Drag Handle Visual */}
-          <div className="w-full flex justify-center pt-2 pb-1 md:hidden bg-orange-50/50 border-b border-orange-100/50">
-            <div className="w-12 h-1.5 rounded-full bg-zinc-200" />
-          </div>
+        {/* ── Sidebar (fixed 360px, no drag) ──────────────────── */}
+        <div className="flex flex-col border-l border-gray-200 bg-gray-50 overflow-hidden">
 
           <div className="px-4 py-3 pb-2 flex items-center justify-between shrink-0 bg-white">
             <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
@@ -399,7 +399,22 @@ export default function InstitutionDashboard() {
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     exit={{ opacity: 0, x: -20, scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    onClick={() => setSelectedIncident(isSelected ? null : incident.id)}
+                    onClick={async () => {
+                      setSelectedIncident(isSelected ? null : incident.id);
+                      // If broadcasting, open accept modal on click
+                      if (incident.status === 'broadcasting' && !store.activeBroadcast) {
+                        const { data: bc } = await supabase
+                          .from('incident_broadcasts')
+                          .select('*')
+                          .eq('incident_id', incident.id)
+                          .eq('status', 'pending')
+                          .limit(1)
+                          .single();
+                        if (bc) {
+                          store.setActiveBroadcast({ ...bc, incidents: incident });
+                        }
+                      }
+                    }}
                     className="cursor-pointer"
                   >
                     <Card
@@ -481,23 +496,45 @@ export default function InstitutionDashboard() {
                         )}
                       </AnimatePresence>
 
-                      {/* Bottom row */}
+                      {/* Bottom row — time + severity + resolve button */}
                       <div className="flex items-center gap-2 mt-1">
                         <Clock className="w-3 h-3 text-zinc-400" />
                         <span className="text-[10px] text-zinc-500">
                           {timeAgo(incident.created_at)}
                         </span>
                         {incident.severity && (
-                          <div className="ml-auto">
-                            <Badge
-                              variant="outline"
-                              className={`text-[9px] ${SEVERITY_COLORS[incident.severity]} border-current/20`}
-                            >
-                              <Activity className="w-2.5 h-2.5 mr-1" />
-                              {SEVERITY_LABELS[incident.severity]}
-                            </Badge>
-                          </div>
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] ml-auto ${SEVERITY_COLORS[incident.severity]} border-current/20`}
+                          >
+                            <Activity className="w-2.5 h-2.5 mr-1" />
+                            {SEVERITY_LABELS[incident.severity]}
+                          </Badge>
                         )}
+                        {/* Resolve / dismiss button */}
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            console.log('[DASHBOARD] Resolving incident', incident.id);
+                            await supabase.from('incidents').update({
+                              status: 'resolved',
+                              updated_at: new Date().toISOString(),
+                            }).eq('id', incident.id);
+                            // Free up the resource
+                            if (incident.assigned_resource) {
+                              await supabase.from('resources').update({
+                                status: 'available',
+                                updated_at: new Date().toISOString(),
+                              }).eq('id', incident.assigned_resource);
+                            }
+                            // Remove from local state
+                            setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
+                          }}
+                          className="text-[9px] text-zinc-400 hover:text-red-500 transition-colors ml-1 px-1.5 py-0.5 rounded hover:bg-red-50"
+                          title="Mark as resolved"
+                        >
+                          ✕
+                        </button>
                       </div>
                     </Card>
                   </motion.div>
@@ -521,44 +558,121 @@ export default function InstitutionDashboard() {
             )}
           </div>
 
-          {/* Resource status strip at bottom */}
-          {resources.length > 0 && (
-            <div className="border-t border-orange-200/60 px-4 py-3 shrink-0 bg-white">
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 font-semibold">Resources</p>
-              <div className="flex flex-wrap gap-1.5 overflow-y-auto max-h-[100px] scrollbar-hide pb-1">
-                {resources.map((r) => (
-                  <div
-                    key={r.id}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
-                      r.status === 'available'
-                        ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'
-                        : r.status === 'dispatched' || r.status === 'en_route'
-                        ? 'bg-amber-600/10 border-amber-600/20 text-amber-500'
-                        : r.status === 'on_scene'
-                        ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
-                        : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
-                    }`}
-                  >
-                    <div className="w-1.5 h-1.5 rounded-full bg-current" />
-                    {r.call_sign}
-                  </div>
-                ))}
+          {/* ── Bottom fixed panel: resources + active dispatch ── */}
+          <div className="shrink-0 border-t border-orange-200/60 bg-white max-h-[45%] overflow-y-auto">
+            {/* Resources strip */}
+            {resources.length > 0 && (
+              <div className="px-4 py-2.5 border-b border-orange-100/60">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5 font-semibold">Resources</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {resources.map((r) => (
+                    <div
+                      key={r.id}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
+                        r.status === 'available'
+                          ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'
+                          : r.status === 'dispatched' || r.status === 'en_route'
+                          ? 'bg-amber-600/10 border-amber-600/20 text-amber-500'
+                          : r.status === 'on_scene'
+                          ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
+                          : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
+                      }`}
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                      {r.call_sign}
+                      {r.status !== 'available' && (
+                        <span className="text-[8px] opacity-70">{r.status.replace('_', ' ')}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Vapi Voice Channel */}
-          {VAPI_ASSISTANT_ID && activeIncidents.length > 0 && (
-            <div className="border-t border-zinc-800/60 px-3 py-3 shrink-0">
-              <CallPanel
-                assistantId={VAPI_ASSISTANT_ID}
-                incidentId={activeIncidents[0]?.id || ''}
-                onCallEnd={() => {
-                  // Call ended — could update UI state
-                }}
-              />
-            </div>
-          )}
+            {/* Active dispatch — only show the MOST RECENT accepted/dispatched incident */}
+            {(() => {
+              const dispatchable = activeIncidents.find(i =>
+                ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(i.status)
+              );
+              if (!dispatchable) return null;
+
+              const isDispatched = ['dispatched', 'en_route', 'on_scene'].includes(dispatchable.status);
+              const assignedRes = dispatchable.assigned_resource
+                ? resources.find(r => r.id === dispatchable.assigned_resource)
+                : null;
+
+              return (
+                <div className="px-4 py-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] uppercase tracking-widest font-bold" style={{
+                      color: isDispatched ? '#16a34a' : '#ea580c'
+                    }}>
+                      {dispatchable.status === 'on_scene' ? 'On Scene'
+                        : isDispatched ? 'Ambulance En Route'
+                        : 'Dispatch Now'}
+                    </p>
+                    {isDispatched && assignedRes && (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        {assignedRes.call_sign}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 text-orange-500" />
+                    <span className="text-xs font-semibold text-zinc-800 truncate">
+                      {dispatchable.landmark || 'Unknown'} {dispatchable.zone ? `· ${dispatchable.zone}` : ''}
+                    </span>
+                  </div>
+
+                  {/* Voice chat — only for the active incident */}
+                  <VoiceChat
+                    incidentId={dispatchable.id}
+                    role="institution"
+                    peerLabel="Civilian"
+                    autoConnect
+                  />
+
+                  {!isDispatched ? (
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={async () => {
+                        console.log('[DASHBOARD] Dispatch:', dispatchable.id);
+                        try {
+                          const res = await fetch('/api/dispatch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ incident_id: dispatchable.id, institute_id: instituteId }),
+                          });
+                          const data = await res.json();
+                          console.log('[DASHBOARD] Dispatch result:', data);
+                          if (!res.ok) alert(`Dispatch failed: ${data.error}`);
+                        } catch (err) {
+                          console.error('[DASHBOARD] Dispatch error:', err);
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-2 hover:from-orange-500 hover:to-orange-700 transition-all shadow-sm"
+                    >
+                      <Ambulance className="w-4 h-4" />
+                      DISPATCH AMBULANCE
+                    </motion.button>
+                  ) : (
+                    <div className="w-full py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-2">
+                      <Ambulance className="w-4 h-4" />
+                      {assignedRes?.call_sign || 'AMBULANCE'} DISPATCHED
+                      {dispatchable.status === 'en_route' && (
+                        <motion.span
+                          className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                          animate={{ opacity: [1, 0.3, 1] }}
+                          transition={{ duration: 1, repeat: Infinity }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       </div>
     </div>

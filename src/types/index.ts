@@ -1,17 +1,14 @@
 // ============================================================
-// WAASTA — Core Type Definitions
+// WAASTA v2 — Core Type Definitions (no phone numbers)
 // ============================================================
 
 export interface Institute {
   id: string;
   name: string;
   type: 'ambulance' | 'fire' | 'police' | 'rescue';
-  phone: string;
   zone: string;
   lat: number;
   lng: number;
-  capacity: number;
-  active_units: number;
   is_available: boolean;
   created_at: string;
 }
@@ -29,7 +26,6 @@ export interface Resource {
 
 export interface Incident {
   id: string;
-  caller_phone: string | null;
   transcript: string | null;
   summary: string | null;
   incident_type: 'accident' | 'fire' | 'medical' | 'crime' | 'other' | null;
@@ -38,7 +34,7 @@ export interface Incident {
   zone: string | null;
   lat: number | null;
   lng: number | null;
-  status: 'intake' | 'geocoded' | 'broadcasting' | 'accepted' | 'dispatched' | 'resolved' | 'cancelled';
+  status: 'intake' | 'geocoded' | 'broadcasting' | 'accepted' | 'dispatched' | 'en_route' | 'on_scene' | 'resolved' | 'cancelled';
   accepted_by: string | null;
   assigned_resource: string | null;
   exclude_list: string[];
@@ -54,17 +50,6 @@ export interface IncidentBroadcast {
   confidence: number;
   sent_at: string;
   responded_at: string | null;
-}
-
-export interface CallLog {
-  id: string;
-  incident_id: string;
-  caller_phone: string | null;
-  institute_phone: string | null;
-  session_id: string | null;
-  status: 'initiated' | 'ringing' | 'connected' | 'completed' | 'failed';
-  started_at: string;
-  ended_at: string | null;
 }
 
 export interface IncidentCard {
@@ -93,4 +78,5 @@ export type AgentStatus =
   | 'waiting_response'
   | 'accepted'
   | 'dispatched'
-  | 'patching';
+  | 'en_route'
+  | 'on_scene';

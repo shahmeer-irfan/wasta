@@ -1,25 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { buildWaastaGraph } from '@/lib/agents/graph';
 import { createServiceClient } from '@/lib/supabase/client';
-import { simulateMovement } from '@/lib/simulation';
-import type { Incident, Institute } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-// HITL endpoint — Institute accepts or rejects a broadcast
+// Institution accepts or rejects a broadcast
+// NO re-running the graph. Direct Supabase updates.
 export async function POST(req: NextRequest) {
   const { broadcast_id, decision } = await req.json();
 
+  console.log('[RESPOND] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('[RESPOND] broadcast_id:', broadcast_id, 'decision:', decision);
+
   if (!broadcast_id || !['ACCEPT', 'REJECT'].includes(decision)) {
+    console.error('[RESPOND] Invalid request');
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }
 
   const supabase = createServiceClient();
 
-  // Fetch broadcast + incident details
+  // Fetch broadcast with related incident
   const { data: broadcast } = await supabase
     .from('incident_broadcasts')
-    .select('*, incidents(*), institutes(*)')
+    .select('*, incidents(*)')
     .eq('id', broadcast_id)
     .single();
 
@@ -27,78 +29,97 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Broadcast not found' }, { status: 404 });
   }
 
-  const incident = (broadcast as Record<string, unknown>).incidents as Incident;
-  const institute = (broadcast as Record<string, unknown>).institutes as Institute;
+  const incident = (broadcast as Record<string, unknown>).incidents as Record<string, unknown>;
+  const incidentId = incident.id as string;
 
-  // Resume graph from pivot node
-  const graph = buildWaastaGraph();
+  if (decision === 'ACCEPT') {
+    // Mark broadcast accepted
+    await supabase.from('incident_broadcasts').update({
+      status: 'accepted',
+      responded_at: new Date().toISOString(),
+    }).eq('id', broadcast_id);
 
-  try {
-    const result = await graph.invoke({
-      transcript: incident.transcript || '',
-      caller_phone: incident.caller_phone || '',
-      incident_id: incident.id,
-      incident_card: {
-        incident_type: incident.incident_type,
-        summary: incident.summary || '',
-        severity: incident.severity ?? 3,
-        landmark: incident.landmark,
-        lat: incident.lat,
-        lng: incident.lng,
-        zone: incident.zone,
-      },
-      landmark_match: (incident.landmark && incident.lat && incident.lng) ? {
-        name: incident.landmark,
-        lat: incident.lat,
-        lng: incident.lng,
-        zone: incident.zone || '',
-      } : null,
-      broadcast_id,
-      target_institute_id: institute.id,
-      target_institute_phone: institute.phone,
-      exclude_list: incident.exclude_list || [],
-      pivot_decision: decision,
-      status: 'waiting_response',
-    });
-
-    // If accepted, assign the nearest available resource
-    if (decision === 'ACCEPT') {
-      const { data: resource } = await supabase
-        .from('resources')
-        .select('*')
-        .eq('institute_id', institute.id)
-        .eq('status', 'available')
-        .limit(1)
-        .single();
-
-      if (resource) {
-        await supabase.from('resources').update({ status: 'dispatched' }).eq('id', resource.id);
-        await supabase.from('incidents').update({
-          assigned_resource: resource.id,
-          status: 'dispatched',
-        }).eq('id', incident.id);
-
-        // Trigger ambulance simulation (non-blocking)
-        if (incident.lat && incident.lng) {
-          simulateMovement({
-            resourceId: resource.id,
-            startLat: resource.lat,
-            startLng: resource.lng,
-            targetLat: incident.lat,
-            targetLng: incident.lng,
-            intervalMs: 2000,
-            steps: 25,
-          }).catch(console.error);
-        }
-      }
-    }
+    // Mark incident accepted by this institute
+    await supabase.from('incidents').update({
+      status: 'accepted',
+      accepted_by: broadcast.institute_id,
+      updated_at: new Date().toISOString(),
+    }).eq('id', incidentId);
 
     return NextResponse.json({
-      incident_id: incident.id,
-      status: result.status,
-      decision,
+      incident_id: incidentId,
+      status: 'accepted',
+      decision: 'ACCEPT',
     });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
+
+  // REJECT — mark broadcast rejected, add to exclude list
+  await supabase.from('incident_broadcasts').update({
+    status: 'rejected',
+    responded_at: new Date().toISOString(),
+  }).eq('id', broadcast_id);
+
+  // Add to exclude list and re-broadcast
+  const currentExcludeList = (incident.exclude_list as string[]) || [];
+  const newExcludeList = [...currentExcludeList, broadcast.institute_id];
+
+  await supabase.from('incidents').update({
+    exclude_list: newExcludeList,
+    status: 'broadcasting',
+    updated_at: new Date().toISOString(),
+  }).eq('id', incidentId);
+
+  // Find next nearest institute (excluding rejected ones)
+  const { data: institutes } = await supabase
+    .from('institutes')
+    .select('*')
+    .eq('is_available', true);
+
+  const available = (institutes || []).filter(
+    (inst) => !newExcludeList.includes(inst.id)
+  );
+
+  if (available.length === 0) {
+    return NextResponse.json({
+      incident_id: incidentId,
+      status: 'no_responders',
+      decision: 'REJECT',
+    });
+  }
+
+  const incLat = (incident.lat as number) || 24.8607;
+  const incLng = (incident.lng as number) || 67.0011;
+
+  const nearest = available.reduce((best, inst) => {
+    const d = haversine(incLat, incLng, inst.lat, inst.lng);
+    const dBest = haversine(incLat, incLng, best.lat, best.lng);
+    return d < dBest ? inst : best;
+  });
+
+  // Create new broadcast
+  await supabase.from('incident_broadcasts').insert({
+    incident_id: incidentId,
+    institute_id: nearest.id,
+    status: 'pending',
+    confidence: 0.92,
+  });
+
+  return NextResponse.json({
+    incident_id: incidentId,
+    status: 'broadcasting',
+    decision: 'REJECT',
+    next_institute: nearest.name,
+  });
+}
+
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }

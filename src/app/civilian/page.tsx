@@ -10,6 +10,7 @@ import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
 import EmergencyCall from '@/components/civilian/EmergencyCall';
+import VoiceChat from '@/components/shared/VoiceChat';
 import { useWaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
@@ -30,16 +31,18 @@ export default function CivilianPage() {
   const [phase, setPhase] = useState<'pre-dispatch' | 'tracking'>('pre-dispatch');
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resourcePosition, setResourcePosition] = useState<{ lat: number; lng: number } | null>(null);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [textInput, setTextInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [endVapiCall, setEndVapiCall] = useState(false);
+  const [triggerVapiCall, setTriggerVapiCall] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<SpeechRecognitionAny>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
-  // ── Geolocation on mount ──────────────────────────────────
+  // ── Geolocation ──────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
@@ -191,10 +194,15 @@ export default function CivilianPage() {
         },
         async (payload) => {
           const updated = payload.new as Incident;
+          console.log('[CIVILIAN] Incident update:', updated.id.substring(0,8), '→', updated.status);
           store.setIncident(updated);
 
-          if (updated.status === 'accepted' || updated.status === 'dispatched') {
+          // ACCEPTED → end AI call, switch to tracking, start voice with institution
+          if (updated.status === 'accepted' && phase !== 'tracking') {
+            console.log('[CIVILIAN] ★ ACCEPTED! Switching to tracking + voice chat');
             store.setAgentStatus('accepted');
+            setEndVapiCall(true);
+            setPhase('tracking');
 
             if (updated.accepted_by) {
               const { data: inst } = await supabase
@@ -204,7 +212,10 @@ export default function CivilianPage() {
                 .single();
               if (inst) setInstitute(inst as Institute);
             }
+          }
 
+          // DISPATCHED → show ambulance on map
+          if (updated.status === 'dispatched' || updated.status === 'en_route' || updated.status === 'on_scene') {
             if (updated.assigned_resource) {
               const { data: res } = await supabase
                 .from('resources')
@@ -213,8 +224,7 @@ export default function CivilianPage() {
                 .single();
               if (res) {
                 store.setAssignedResource(res as Resource);
-                setPhase('tracking');
-                // Simulation is triggered server-side in /api/agent/respond
+                store.setAgentStatus('dispatched');
               }
             }
           }
@@ -286,18 +296,18 @@ export default function CivilianPage() {
   const canSubmitVoice = voiceTranscript.trim().length > 5;
 
   return (
-    <div className="h-screen w-screen bg-white overflow-hidden relative">
+    <div className="min-h-screen w-screen bg-white overflow-y-auto overflow-x-hidden relative">
       <AnimatePresence mode="wait">
         {phase === 'pre-dispatch' ? (
           <motion.div
             key="pre-dispatch"
-            className="h-full flex flex-col relative overflow-hidden"
+            className="min-h-screen flex flex-col relative"
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.4 }}
           >
 
-            {/* Header */}
-            <div className="px-6 pt-8 pb-4 flex items-center justify-between relative z-10">
+            {/* Header — sticky */}
+            <div className="px-6 py-4 flex items-center justify-between sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
               <div className="flex items-center gap-3">
                 <Link href="/">
                   <div className="w-9 h-9 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center hover:bg-orange-100 transition-colors cursor-pointer shrink-0">
@@ -335,36 +345,42 @@ export default function CivilianPage() {
             {/* Main content area */}
             <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 relative z-10">
 
-              {/* ── Map Rectangle behind SOS button ──────── */}
-              <div className="relative w-full -mx-6 overflow-hidden" style={{ width: 'calc(100% + 3rem)', height: 280 }}>
-                {/* Map layer */}
+              {/* ── Hero: Map BG + SOS Button + Tagline ──────── */}
+              <div className="relative w-full overflow-hidden" style={{ height: 320 }}>
+                {/* Map background */}
                 <div
                   className="absolute inset-0 pointer-events-none"
                   style={{
-                    filter: 'blur(0.5px)',
-                    opacity: 0.45,
-                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
-                    maskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
+                    opacity: 0.4,
+                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)',
+                    maskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)',
                   }}
                 >
                   <WaastaMap
                     center={userLocation ?? undefined}
-                    zoom={13}
-                    markers={[]}
+                    zoom={14}
+                    markers={userLocation ? [{ lat: userLocation.lat, lng: userLocation.lng, iconType: 'institute' as const, popup: 'You' }] : []}
                     className="h-full w-full"
                   />
                 </div>
-                {/* SOS button centered on top */}
-                <div className="absolute inset-0 flex items-center justify-center">
+                {/* SOS button centered */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <SOSButton
                     onPress={() => {
-                      if (!isActive) {
-                        // SOS pressed
+                      if (!isActive && VAPI_ASSISTANT_ID) {
+                        setTriggerVapiCall(true);
                       }
                     }}
-                    isActive={isActive}
+                    isActive={store.agentStatus !== 'idle'}
                   />
                 </div>
+              </div>
+              <div className="text-center -mt-2 mb-4">
+                <h2 className="text-xl font-extrabold text-gray-900">Emergency? We&apos;re here.</h2>
+                <p className="text-base font-semibold text-orange-600 mt-1">مدد چاہیے؟ ہم یہاں ہیں</p>
+                <p className="text-xs text-gray-400 mt-2 max-w-[280px] mx-auto leading-relaxed">
+                  Tap SOS to speak with Waasta AI, or describe below.
+                </p>
               </div>
 
               {/* Status / Transcript stream */}
@@ -413,34 +429,88 @@ export default function CivilianPage() {
                 )}
               </AnimatePresence>
 
-              {/* Vapi AI Voice Call — show when idle */}
-              {!isActive && VAPI_ASSISTANT_ID && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-sm"
-                >
+              {/* Vapi AI Voice Call — ALWAYS mounted when assistant configured */}
+              {VAPI_ASSISTANT_ID && (
+                <div className="w-full max-w-sm">
                   <EmergencyCall
                     assistantId={VAPI_ASSISTANT_ID}
+                    forceEnd={endVapiCall}
+                    autoStart={triggerVapiCall}
                     onTranscript={(text, role) => {
                       if (role === 'user') store.setTranscript(text);
+                      if (role === 'assistant') store.setTranscript(text);
                     }}
                     onCallStart={() => store.setAgentStatus('listening')}
-                    onCallEnd={() => {
-                      if (store.agentStatus === 'listening') {
-                        store.setAgentStatus('idle');
+                    onCallEnd={async () => {
+                      // AI call ended — find the incident if we don't have it yet
+                      if (!store.incidentId) {
+                        store.setAgentStatus('analyzing');
+                        // Poll for latest incident created in last 60s
+                        for (let i = 0; i < 5; i++) {
+                          await new Promise((r) => setTimeout(r, 1000));
+                          const { data: recent } = await supabase
+                            .from('incidents')
+                            .select('*')
+                            .order('created_at', { ascending: false })
+                            .limit(1)
+                            .single();
+                          if (recent) {
+                            const age = Date.now() - new Date(recent.created_at).getTime();
+                            if (age < 120000) { // Created within last 2 min
+                              store.setIncidentId(recent.id);
+                              store.setIncident(recent as Incident);
+                              store.setAgentStatus(
+                                recent.status === 'accepted' ? 'accepted' : 'broadcasting'
+                              );
+                              if (recent.status === 'accepted') {
+                                setEndVapiCall(true);
+                                setPhase('tracking');
+                                if (recent.accepted_by) {
+                                  const { data: inst } = await supabase
+                                    .from('institutes')
+                                    .select('*')
+                                    .eq('id', recent.accepted_by)
+                                    .single();
+                                  if (inst) setInstitute(inst as Institute);
+                                }
+                              }
+                              break;
+                            }
+                          }
+                        }
+                        // If still nothing, reset
+                        if (!store.incidentId) {
+                          store.setAgentStatus('idle');
+                        }
                       }
                     }}
-                    onIncidentReported={(data) => {
-                      // Vapi webhook handles incident creation server-side.
-                      // Here we just update UI to show "analyzing" state.
+                    onIncidentReported={async (data) => {
+                      // Vapi webhook creates incident server-side.
+                      // Update UI and poll for the newly-created incident.
                       store.setAgentStatus('analyzing');
                       store.setTranscript(
-                        store.transcript || `${data.incident_type} near ${data.landmark}`
+                        `${data.incident_type} near ${data.landmark} — dispatching...`
                       );
+
+                      // Poll Supabase for the new incident (webhook creates it within ~1-2s)
+                      for (let attempt = 0; attempt < 8; attempt++) {
+                        await new Promise((r) => setTimeout(r, 1500));
+                        const { data: recent } = await supabase
+                          .from('incidents')
+                          .select('*')
+                          .order('created_at', { ascending: false })
+                          .limit(1)
+                          .single();
+                        if (recent && !store.incidentId) {
+                          store.setIncidentId(recent.id);
+                          store.setIncident(recent as Incident);
+                          store.setAgentStatus('broadcasting');
+                          break;
+                        }
+                      }
                     }}
                   />
-                </motion.div>
+                </div>
               )}
 
               {/* Input options — show when idle */}
@@ -560,9 +630,9 @@ export default function CivilianPage() {
                             handleTextSubmit();
                           }
                         }}
-                        placeholder="Describe what's happening, location, injuries... (Ctrl+Enter to send)"
-                        rows={3}
-                        className="w-full bg-transparent text-sm text-zinc-400 placeholder-zinc-600 resize-none outline-none leading-relaxed"
+                        placeholder="Kya hua, kahan hua, kitne log hain... (What happened, where, how many people)"
+                        rows={4}
+                        className="w-full bg-transparent text-sm text-gray-800 placeholder-gray-400 resize-none outline-none leading-relaxed"
                       />
                     </div>
                     <div className="flex items-center justify-between px-4 pb-3">
@@ -586,40 +656,59 @@ export default function CivilianPage() {
               )}
             </div>
 
-            {/* Bottom bar */}
-            <div className="px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-zinc-700 text-xs">
-                <AlertTriangle className="w-3 h-3" />
-                <span>For genuine emergencies only</span>
+            {/* Emergency numbers + Demo */}
+            <div className="px-6 pt-4 pb-8 mt-auto">
+              <div className="border-t border-gray-100 pt-5 mb-4">
+                <p className="text-[10px] text-gray-400 text-center uppercase tracking-widest font-semibold mb-3">
+                  Also call directly
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    ['1122', 'Rescue Punjab', '#ea580c'],
+                    ['115', 'Edhi Foundation', '#2563eb'],
+                    ['16', 'Police', '#374151'],
+                  ].map(([num, label, color]) => (
+                    <a key={num} href={`tel:${num}`} className="block text-center bg-white border border-gray-200 rounded-xl py-3 px-2 no-underline hover:border-orange-300 transition-colors">
+                      <div className="text-xl font-black leading-none" style={{ color }}>{num}</div>
+                      <div className="text-[9px] text-gray-400 mt-1.5 leading-tight">{label}</div>
+                    </a>
+                  ))}
+                </div>
               </div>
-              {/* Demo trigger — one-click simulation */}
-              {!isActive && (
-                <motion.button
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={async () => {
-                    store.setAgentStatus('analyzing');
-                    store.setTranscript('Running demo simulation...');
-                    try {
-                      const res = await fetch('/api/demo/trigger', { method: 'POST' });
-                      const data = await res.json();
-                      if (data.incident_id) {
-                        store.setIncidentId(data.incident_id);
-                        store.setBroadcastId(data.broadcast_id || null);
-                        store.setTranscript(data.transcript || '');
-                        store.setAgentStatus('broadcasting');
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-gray-400 text-[10px]">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>For genuine emergencies only</span>
+                </div>
+                {!isActive && (
+                  <motion.button
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={async () => {
+                      store.setAgentStatus('analyzing');
+                      store.setTranscript('Running demo simulation...');
+                      try {
+                        const res = await fetch('/api/demo/trigger', { method: 'POST' });
+                        const data = await res.json();
+                        if (data.incident_id) {
+                          store.setIncidentId(data.incident_id);
+                          store.setBroadcastId(data.broadcast_id || null);
+                          store.setTranscript(data.transcript || '');
+                          store.setAgentStatus('broadcasting');
+                        }
+                      } catch {
+                        store.setAgentStatus('idle');
                       }
-                    } catch {
-                      store.setAgentStatus('idle');
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-600/10 border border-amber-600/20 text-amber-400 hover:bg-amber-600/20 transition-colors text-xs"
-                >
-                  <Zap className="w-3 h-3" />
-                  Demo
-                </motion.button>
-              )}
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-600 hover:bg-amber-100 transition-colors text-[10px] font-semibold"
+                  >
+                    <Zap className="w-3 h-3" />
+                    Demo
+                  </motion.button>
+                )}
+              </div>
             </div>
           </motion.div>
         ) : (
@@ -676,6 +765,18 @@ export default function CivilianPage() {
                 )}
               </div>
             </div>
+
+            {/* Voice chat with institution — starts immediately on accept */}
+            {store.incidentId && (
+              <div className="px-4 py-2 border-t border-orange-200/30 bg-white/95 backdrop-blur-sm">
+                <VoiceChat
+                  incidentId={store.incidentId}
+                  role="civilian"
+                  peerLabel={institute?.name || 'Responder'}
+                  autoConnect
+                />
+              </div>
+            )}
 
             {/* Bottom tracking sheet */}
             {store.incident && (
