@@ -38,10 +38,17 @@ export default function VoiceChat({
     setStatus('connecting');
 
     const vc = new VoiceChannel(incidentId, role, {
-      onConnected: () => setStatus('connected'),
+      onConnected: () => {
+        console.log('[VoiceChat] Connected!');
+        setStatus('connected');
+      },
       onDisconnected: () => {
-        setStatus('ended');
-        onHangup?.();
+        // Only end if we were previously connected
+        if (status === 'connected') {
+          setStatus('ended');
+          onHangup?.();
+        }
+        // If we were just 'connecting', stay in connecting state (peer not ready yet)
       },
       onRemoteStream: (stream) => {
         // Play remote audio
@@ -53,7 +60,11 @@ export default function VoiceChat({
       },
       onError: (err) => {
         console.error('Voice channel error:', err);
-        setStatus('ended');
+        // Don't show "ended" for transient errors — stay in connecting
+        // Only show ended if we were previously connected
+        if (status === 'connected') {
+          setStatus('ended');
+        }
       },
     });
 

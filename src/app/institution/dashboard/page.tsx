@@ -651,8 +651,9 @@ export default function InstitutionDashboard() {
                     </span>
                   </div>
 
-                  {/* Voice chat — auto-connects when accepted */}
+                  {/* Voice chat — key forces fresh component per incident */}
                   <VoiceChat
+                    key={`voice-${dispatchable.id}`}
                     incidentId={dispatchable.id}
                     role="institution"
                     peerLabel="Civilian"

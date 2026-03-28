@@ -15,7 +15,7 @@ import { useWaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
 
-const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
+const VOICE_ENABLED = true; // Custom Whisper + Groq pipeline — always available
 
 const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
   ssr: false,
@@ -409,7 +409,7 @@ export default function CivilianPage() {
               <div className="relative z-10 flex flex-col items-center">
                 <SOSButton
                   onPress={() => {
-                    if (!isActive && VAPI_ASSISTANT_ID) {
+                    if (!isActive && VOICE_ENABLED) {
                       setTriggerVapiCall(true);
                     }
                   }}
@@ -459,10 +459,9 @@ export default function CivilianPage() {
               </AnimatePresence>
 
               {/* Vapi EmergencyCall — hidden but always mounted */}
-              {VAPI_ASSISTANT_ID && (
+              {VOICE_ENABLED && (
                 <div className="w-full max-w-sm mt-3 relative z-10">
                   <EmergencyCall
-                    assistantId={VAPI_ASSISTANT_ID}
                     forceEnd={endVapiCall}
                     autoStart={triggerVapiCall}
                     onTranscript={(text, role) => {
@@ -696,6 +695,7 @@ export default function CivilianPage() {
       {store.incidentId && store.incident?.accepted_by && (
         <div className="px-4 py-2 border-t border-orange-200/30 bg-white/95 backdrop-blur-sm">
           <VoiceChat
+            key={`voice-${store.incidentId}`}
             incidentId={store.incidentId}
             role="civilian"
             peerLabel={institute?.name || 'Rescue Team'}
