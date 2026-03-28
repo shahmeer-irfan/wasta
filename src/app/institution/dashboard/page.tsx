@@ -290,13 +290,16 @@ export default function InstitutionDashboard() {
           broadcast_id: store.activeBroadcast.id,
           decision,
         }),
-      });
+      }); 
 
       if (decision === 'ACCEPT') {
-        // Mark busy — suppress new popups until this call is done
+        // Stay busy — dismiss popup but DON'T show next queued call
         store.setBusy(true);
+        store.dismissBroadcast();
+      } else {
+        // REJECT — show next queued call immediately
+        store.finishCall();
       }
-      store.clearBroadcast();
     } catch (err) {
       console.error('Response failed:', err);
     } finally {
@@ -645,13 +648,9 @@ export default function InstitutionDashboard() {
                             // Delete from broadcasts and incidents tables completely
                             await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
                             await supabase.from('incidents').delete().eq('id', incident.id);
-                            // Remove from local state + clear busy (show next queued broadcast)
+                            // Remove from local state + promote next queued call
                             setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
-                            store.setBusy(false);
-                            // If there are queued broadcasts, promote next
-                            if (store.broadcastQueue?.length > 0) {
-                              store.clearBroadcast();
-                            }
+                            store.finishCall();
                           }}
                           className="text-[9px] text-zinc-400 hover:text-red-500 transition-colors ml-1 px-1.5 py-0.5 rounded hover:bg-red-50"
                           title="Mark as resolved"
@@ -708,7 +707,7 @@ export default function InstitutionDashboard() {
                           await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
                           await supabase.from('incidents').delete().eq('id', incident.id);
                           setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
-                          store.setBusy(false);
+                          store.finishCall();
                         }
                       }}
                       className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
@@ -853,6 +852,7 @@ export default function InstitutionDashboard() {
                           await supabase.from('incident_broadcasts').delete().eq('incident_id', dispatchable.id);
                           await supabase.from('incidents').delete().eq('id', dispatchable.id);
                           setAllIncidents(prev => prev.filter(i => i.id !== dispatchable.id));
+                          store.finishCall(); // Promote next queued call
                         }}
                         className="w-full text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-semibold uppercase tracking-tighter flex items-center justify-center gap-1.5"
                       >

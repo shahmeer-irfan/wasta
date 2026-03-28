@@ -2,16 +2,14 @@ import { create } from 'zustand';
 import type { AgentStatus, Incident, IncidentBroadcast, Resource } from '@/types';
 
 interface WaastaStore {
-  // Civilian state
   agentStatus: AgentStatus;
   transcript: string;
   incidentId: string | null;
   incident: Incident | null;
   assignedResource: Resource | null;
   broadcastId: string | null;
-  eta: number | null; // seconds
+  eta: number | null;
 
-  // Actions
   setAgentStatus: (s: AgentStatus) => void;
   setTranscript: (t: string) => void;
   setIncidentId: (id: string) => void;
@@ -49,19 +47,26 @@ export const useWaastaStore = create<WaastaStore>((set) => ({
   }),
 }));
 
-// Institution store — with broadcast queue for concurrency
+// ── Institution Store with Broadcast Queue ──
 interface InstitutionStore {
   activeBroadcast: (IncidentBroadcast & { incidents?: Incident }) | null;
   broadcastQueue: (IncidentBroadcast & { incidents?: Incident })[];
   incidents: Incident[];
-  isBusy: boolean; // true when on an active call/dispatch
+  isBusy: boolean;
 
   // Queue a broadcast — shows popup only if not busy
   queueBroadcast: (b: IncidentBroadcast & { incidents?: Incident }) => void;
-  // Legacy — still used by pending broadcast check on load
+  // Legacy direct set (used by pending check on load)
   setActiveBroadcast: (b: InstitutionStore['activeBroadcast']) => void;
   setIncidents: (i: Incident[]) => void;
-  clearBroadcast: () => void; // clears active, promotes next from queue
+
+  // Dismiss popup WITHOUT promoting next (used on ACCEPT — stay busy)
+  dismissBroadcast: () => void;
+  // Finish current call — clears busy, promotes next from queue (used on dismiss/resolve)
+  finishCall: () => void;
+  // Legacy alias
+  clearBroadcast: () => void;
+
   setBusy: (busy: boolean) => void;
 }
 
@@ -74,27 +79,40 @@ export const useInstitutionStore = create<InstitutionStore>((set, get) => ({
   queueBroadcast: (b) => {
     const { activeBroadcast, isBusy } = get();
     if (!activeBroadcast && !isBusy) {
-      // Not busy — show immediately
+      console.log('[STORE] Showing broadcast immediately (not busy)');
       set({ activeBroadcast: b });
     } else {
-      // Busy — queue it
-      console.log('[STORE] Broadcast queued (busy):', b.incident_id?.substring(0, 8));
+      console.log('[STORE] Queued broadcast (busy):', b.incident_id);
       set((state) => ({ broadcastQueue: [...state.broadcastQueue, b] }));
     }
   },
 
   setActiveBroadcast: (activeBroadcast) => set({ activeBroadcast }),
   setIncidents: (incidents) => set({ incidents }),
-  clearBroadcast: () => {
+
+  // ACCEPT: dismiss popup, stay busy, do NOT show next
+  dismissBroadcast: () => {
+    console.log('[STORE] Dismissed broadcast (staying busy)');
+    set({ activeBroadcast: null });
+  },
+
+  // DONE: clear busy, promote next queued broadcast
+  finishCall: () => {
     const { broadcastQueue } = get();
     if (broadcastQueue.length > 0) {
-      // Promote next from queue
       const [next, ...rest] = broadcastQueue;
-      console.log('[STORE] Promoting next broadcast from queue:', next.incident_id?.substring(0, 8));
+      console.log('[STORE] Promoting next from queue:', next.incident_id);
       set({ activeBroadcast: next, broadcastQueue: rest, isBusy: false });
     } else {
+      console.log('[STORE] Queue empty — free');
       set({ activeBroadcast: null, isBusy: false });
     }
   },
+
+  // Legacy alias — same as finishCall
+  clearBroadcast: () => {
+    get().finishCall();
+  },
+
   setBusy: (isBusy) => set({ isBusy }),
 }));
