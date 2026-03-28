@@ -28,6 +28,7 @@ export default function CivilianPage() {
   const [phase, setPhase] = useState<'pre-dispatch' | 'tracking'>('pre-dispatch');
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resourcePosition, setResourcePosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [textInput, setTextInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -35,6 +36,16 @@ export default function CivilianPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<SpeechRecognitionAny>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Geolocation on mount ──────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {/* silently fall back to Karachi center */},
+      { timeout: 8000 }
+    );
+  }, []);
 
   // ── Voice Recognition Setup ──────────────────────────────
   const startVoiceRecording = useCallback(() => {
@@ -286,12 +297,13 @@ export default function CivilianPage() {
         {phase === 'pre-dispatch' ? (
           <motion.div
             key="pre-dispatch"
-            className="h-full flex flex-col"
+            className="h-full flex flex-col relative overflow-hidden"
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.4 }}
           >
+
             {/* Header */}
-            <div className="px-6 pt-8 pb-4 flex items-center justify-between">
+            <div className="px-6 pt-8 pb-4 flex items-center justify-between relative z-10">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <Shield className="w-5 h-5 text-orange-500" />
@@ -320,17 +332,39 @@ export default function CivilianPage() {
             </div>
 
             {/* Main content area */}
-            <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
+            <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 relative z-10">
 
-              {/* SOS Button */}
-              <SOSButton
-                onPress={() => {
-                  if (!isActive) {
-                    // SOS pressed
-                  }
-                }}
-                isActive={isActive}
-              />
+              {/* ── Map Rectangle behind SOS button ──────── */}
+              <div className="relative w-full -mx-6 overflow-hidden" style={{ width: 'calc(100% + 3rem)', height: 280 }}>
+                {/* Map layer */}
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    filter: 'blur(0.5px)',
+                    opacity: 0.45,
+                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
+                    maskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
+                  }}
+                >
+                  <VaastaMap
+                    center={userLocation ?? undefined}
+                    zoom={13}
+                    markers={[]}
+                    className="h-full w-full"
+                  />
+                </div>
+                {/* SOS button centered on top */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <SOSButton
+                    onPress={() => {
+                      if (!isActive) {
+                        // SOS pressed
+                      }
+                    }}
+                    isActive={isActive}
+                  />
+                </div>
+              </div>
 
               {/* Status / Transcript stream */}
               <div className="w-full max-w-sm">

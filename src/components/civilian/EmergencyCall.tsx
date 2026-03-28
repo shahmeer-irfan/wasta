@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Phone, PhoneOff, Mic, Volume2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { useGuardianStore } from '@/lib/store';
+import { useVaastaStore } from '@/lib/store';
 
 interface EmergencyCallProps {
   assistantId: string;
@@ -27,7 +27,7 @@ export default function EmergencyCall({
   const [isConnecting, setIsConnecting] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const store = useGuardianStore();
+  const store = useVaastaStore();
 
   // Initialize Vapi SDK lazily (client-side only)
   const getVapi = useCallback(async () => {
