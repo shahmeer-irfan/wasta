@@ -30,22 +30,22 @@ const DEMO_INSTITUTE_ID_KEY = 'waasta_institute_id';
 
 // Icon map for incident types
 const INCIDENT_ICONS: Record<string, React.ReactNode> = {
-  accident:  <Car className="w-3.5 h-3.5" />,
-  fire:      <Flame className="w-3.5 h-3.5" />,
-  medical:   <Heart className="w-3.5 h-3.5" />,
-  crime:     <AlertTriangle className="w-3.5 h-3.5" />,
-  other:     <HelpCircle className="w-3.5 h-3.5" />,
+  accident: <Car className="w-3.5 h-3.5" />,
+  fire: <Flame className="w-3.5 h-3.5" />,
+  medical: <Heart className="w-3.5 h-3.5" />,
+  crime: <AlertTriangle className="w-3.5 h-3.5" />,
+  other: <HelpCircle className="w-3.5 h-3.5" />,
 };
 
 // Human-readable status labels + colors
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  intake:       { label: 'Processing', cls: 'text-blue-400 border-blue-600/30 bg-blue-600/10' },
-  geocoded:     { label: 'Located',    cls: 'text-cyan-400 border-cyan-600/30 bg-cyan-600/10' },
-  broadcasting: { label: 'Alerting',   cls: 'text-amber-400 border-amber-600/30 bg-amber-600/10' },
-  accepted:     { label: 'Accepted',   cls: 'text-emerald-400 border-emerald-600/30 bg-emerald-600/10' },
-  dispatched:   { label: 'Dispatched', cls: 'text-green-400 border-green-600/30 bg-green-600/10' },
-  resolved:     { label: 'Resolved',   cls: 'text-zinc-600 border-orange-300/30 bg-zinc-600/10' },
-  cancelled:    { label: 'Cancelled',  cls: 'text-zinc-500 border-orange-200/30 bg-orange-100/10' },
+  intake: { label: 'Processing', cls: 'text-blue-400 border-blue-600/30 bg-blue-600/10' },
+  geocoded: { label: 'Located', cls: 'text-cyan-400 border-cyan-600/30 bg-cyan-600/10' },
+  broadcasting: { label: 'Alerting', cls: 'text-amber-400 border-amber-600/30 bg-amber-600/10' },
+  accepted: { label: 'Accepted', cls: 'text-emerald-400 border-emerald-600/30 bg-emerald-600/10' },
+  dispatched: { label: 'Dispatched', cls: 'text-green-400 border-green-600/30 bg-green-600/10' },
+  resolved: { label: 'Resolved', cls: 'text-zinc-600 border-orange-300/30 bg-zinc-600/10' },
+  cancelled: { label: 'Cancelled', cls: 'text-zinc-500 border-orange-200/30 bg-orange-100/10' },
 };
 
 function timeAgo(dateStr: string): string {
@@ -403,7 +403,7 @@ export default function InstitutionDashboard() {
 
         {/* ── Sidebar / Bottom Sheet ──────────────────────────── */}
         <div className="w-full md:w-80 h-[45vh] md:h-auto border-t md:border-t-0 md:border-l border-orange-200/60 flex flex-col bg-white shrink-0 shadow-[0_-4px_25px_-5px_rgba(0,0,0,0.1)] md:shadow-none z-10">
-          
+
           {/* Mobile Drag Handle Visual */}
           <div className="w-full flex justify-center pt-2 pb-1 md:hidden bg-orange-50/50 border-b border-orange-100/50">
             <div className="w-12 h-1.5 rounded-full bg-zinc-200" />
@@ -436,33 +436,31 @@ export default function InstitutionDashboard() {
                     className="cursor-pointer"
                   >
                     <Card
-                      className={`relative overflow-hidden transition-all duration-300 ${
-                        isSelected
+                      className={`relative overflow-hidden transition-all duration-300 ${isSelected
                           ? 'border-[2px] border-orange-500 bg-orange-100 shadow-[0_8px_30px_rgba(249,115,22,0.25)] scale-[1.02] z-20'
                           : 'bg-white border-orange-200/60 hover:bg-orange-50 hover:border-orange-300 hover:shadow-md'
-                      } p-3`}
+                        } p-3`}
                     >
                       {/* Top row */}
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
-                            incident.severity
+                          <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${incident.severity
                               ? incident.severity >= 4 ? 'bg-orange-500/20 text-orange-600' :
                                 incident.severity >= 3 ? 'bg-orange-600/20 text-orange-400' :
-                                'bg-yellow-600/20 text-yellow-500'
+                                  'bg-yellow-600/20 text-yellow-500'
                               : 'bg-orange-100 text-zinc-500'
-                          }`}>
+                            }`}>
                             {INCIDENT_ICONS[incident.incident_type ?? 'other'] ?? <HelpCircle className="w-3.5 h-3.5" />}
                           </div>
                           <span className="text-sm font-semibold text-zinc-700 capitalize">
                             {incident.incident_type
                               ? incident.incident_type.replace('_', ' ')
                               : incident.status === 'intake'
-                              ? 'Processing...'
-                              : 'Unknown'}
+                                ? 'Processing...'
+                                : 'Unknown'}
                           </span>
                         </div>
-                        
+
 
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                           {isSelected && incident.lat && (
@@ -562,15 +560,14 @@ export default function InstitutionDashboard() {
                 {resources.map((r) => (
                   <div
                     key={r.id}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
-                      r.status === 'available'
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${r.status === 'available'
                         ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'
                         : r.status === 'dispatched' || r.status === 'en_route'
-                        ? 'bg-amber-600/10 border-amber-600/20 text-amber-500'
-                        : r.status === 'on_scene'
-                        ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
-                        : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
-                    }`}
+                          ? 'bg-amber-600/10 border-amber-600/20 text-amber-500'
+                          : r.status === 'on_scene'
+                            ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
+                            : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
+                      }`}
                   >
                     <div className="w-1.5 h-1.5 rounded-full bg-current" />
                     {r.call_sign}

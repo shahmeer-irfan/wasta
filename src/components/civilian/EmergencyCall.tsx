@@ -230,28 +230,27 @@ export default function EmergencyCall({
 
             {/* Call controls */}
             <div className="px-4 pb-4 flex items-center justify-center gap-6">
-              
+
               <div className="relative flex items-center justify-center w-14 h-14">
                 {/* ── Audio Ripples tied to voice volume ── */}
                 {!isMuted && normalizedVolume > 0.05 && (
                   <motion.div
                     className="absolute inset-0 rounded-full bg-orange-500/30 blur-sm pointer-events-none"
-                    animate={{ 
+                    animate={{
                       scale: 1 + (normalizedVolume * 1.5),
                       opacity: Math.max(0, 0.8 - normalizedVolume)
                     }}
                     transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
                   />
                 )}
-                
+
                 <motion.button
                   whileTap={{ scale: 0.9 }}
                   onClick={toggleMute}
-                  className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-colors z-10 ${
-                    isMuted
+                  className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-colors z-10 ${isMuted
                       ? 'bg-amber-600/20 border border-amber-600/30 text-amber-400'
                       : 'bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 shadow-lg'
-                  }`}
+                    }`}
                 >
                   {isMuted ? <Volume2 className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </motion.button>
