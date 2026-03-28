@@ -584,9 +584,30 @@ export default function InstitutionDashboard() {
                 <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5 font-semibold">Resources</p>
                 <div className="flex flex-wrap gap-1.5">
                   {resources.map((r) => (
-                    <div
+                    <motion.div
                       key={r.id}
+                      whileTap={{ scale: r.status !== 'available' ? 0.95 : 1 }}
+                      onClick={async () => {
+                        if (r.status === 'available') return;
+                        if (!window.confirm(`Force resource ${r.call_sign} to Available? This will abandon its current incident.`)) return;
+                        
+                        console.log(`[DASHBOARD] Forcing ${r.call_sign} to available...`);
+                        await supabase.from('resources').update({
+                          status: 'available',
+                          updated_at: new Date().toISOString()
+                        }).eq('id', r.id);
+
+                        const incident = allIncidents.find(i => i.assigned_resource === r.id);
+                        if (incident) {
+                          console.log(`[DASHBOARD] Deleting orphaned incident ${incident.id}`);
+                          await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
+                          await supabase.from('incidents').delete().eq('id', incident.id);
+                          setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
+                        }
+                      }}
                       className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
+                        r.status !== 'available' ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''
+                      } ${
                         r.status === 'available'
                           ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'
                           : r.status === 'dispatched' || r.status === 'en_route'
@@ -601,7 +622,7 @@ export default function InstitutionDashboard() {
                       {r.status !== 'available' && (
                         <span className="text-[8px] opacity-70">{r.status.replace('_', ' ')}</span>
                       )}
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               </div>
