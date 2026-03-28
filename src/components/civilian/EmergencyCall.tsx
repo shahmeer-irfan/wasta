@@ -12,6 +12,8 @@ interface EmergencyCallProps {
   onCallStart: () => void;
   onCallEnd: () => void;
   onIncidentReported: (data: { landmark: string; incident_type: string; severity: number }) => void;
+  forceEnd?: boolean;
+  autoStart?: boolean; // Parent sets this to true to auto-start the call
 }
 
 export default function EmergencyCall({
@@ -20,6 +22,8 @@ export default function EmergencyCall({
   onCallStart,
   onCallEnd,
   onIncidentReported,
+  forceEnd = false,
+  autoStart = false,
 }: EmergencyCallProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const vapiRef = useRef<any>(null);
@@ -79,19 +83,9 @@ export default function EmergencyCall({
         }
       }
 
-      // Tool-call results — extract incident_id from webhook response
-      if (msg.type === 'tool-calls-result' || msg.type === 'function-call-result') {
-        try {
-          const results = (msg.toolCallResult || msg.results || []) as Array<Record<string, unknown>>;
-          for (const r of results) {
-            const parsed = typeof r.result === 'string' ? JSON.parse(r.result) : r.result;
-            if (parsed?.incident_id) {
-              store.setIncidentId(parsed.incident_id);
-              store.setAgentStatus('broadcasting');
-            }
-          }
-        } catch { /* parse failed — non-critical */ }
-      }
+      // When the AI reads back the dispatch confirmation, it means
+      // the webhook succeeded. The incident_id was set via onIncidentReported → polling.
+      // Nothing else needed here — the polling in the parent handles subscription.
     });
 
     vapi.on('volume-level', (level: number) => {
@@ -140,6 +134,22 @@ export default function EmergencyCall({
     vapi.setMuted(newMuted);
     setIsMuted(newMuted);
   }, [isMuted, isCallActive]);
+
+  // Auto-start call when parent requests (SOS button pressed)
+  useEffect(() => {
+    if (autoStart && !isCallActive && !isConnecting) {
+      startCall();
+    }
+  }, [autoStart, isCallActive, isConnecting, startCall]);
+
+  // Force end call from parent (when institution accepts)
+  useEffect(() => {
+    if (forceEnd && isCallActive) {
+      vapiRef.current?.stop();
+      setIsCallActive(false);
+      setIsConnecting(false);
+    }
+  }, [forceEnd, isCallActive]);
 
   // Cleanup on unmount
   useEffect(() => {

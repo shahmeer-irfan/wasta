@@ -14,6 +14,7 @@ import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
 import EmergencyCall from '@/components/civilian/EmergencyCall';
+import VoiceChat from '@/components/shared/VoiceChat';
 import { useWaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
@@ -34,16 +35,18 @@ export default function CivilianPage() {
   const [phase, setPhase] = useState<'pre-dispatch' | 'tracking'>('pre-dispatch');
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resourcePosition, setResourcePosition] = useState<{ lat: number; lng: number } | null>(null);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [textInput, setTextInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [endVapiCall, setEndVapiCall] = useState(false);
+  const [triggerVapiCall, setTriggerVapiCall] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<SpeechRecognitionAny>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
-  // ── Geolocation on mount ──────────────────────────────────
+  // ── Geolocation ──────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
@@ -125,7 +128,8 @@ export default function CivilianPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript: transcript.trim(),
-          caller_phone: '+92-300-1234567',
+          lat: userLocation?.lat || null,
+          lng: userLocation?.lng || null,
         }),
       });
 
@@ -195,10 +199,15 @@ export default function CivilianPage() {
         },
         async (payload) => {
           const updated = payload.new as Incident;
+          console.log('[CIVILIAN] Incident update:', updated.id.substring(0,8), '→', updated.status);
           store.setIncident(updated);
 
-          if (updated.status === 'accepted' || updated.status === 'dispatched') {
+          // ACCEPTED → end AI call, switch to tracking, start voice with institution
+          if (updated.status === 'accepted' && phase !== 'tracking') {
+            console.log('[CIVILIAN] ★ ACCEPTED! Switching to tracking + voice chat');
             store.setAgentStatus('accepted');
+            setEndVapiCall(true);
+            setPhase('tracking');
 
             if (updated.accepted_by) {
               const { data: inst } = await supabase
@@ -208,7 +217,10 @@ export default function CivilianPage() {
                 .single();
               if (inst) setInstitute(inst as Institute);
             }
+          }
 
+          // DISPATCHED → show ambulance on map
+          if (updated.status === 'dispatched' || updated.status === 'en_route' || updated.status === 'on_scene') {
             if (updated.assigned_resource) {
               const { data: res } = await supabase
                 .from('resources')
@@ -217,8 +229,7 @@ export default function CivilianPage() {
                 .single();
               if (res) {
                 store.setAssignedResource(res as Resource);
-                setPhase('tracking');
-                // Simulation is triggered server-side in /api/agent/respond
+                store.setAgentStatus('dispatched');
               }
             }
           }
@@ -290,18 +301,18 @@ export default function CivilianPage() {
   const canSubmitVoice = voiceTranscript.trim().length > 5;
 
   return (
-    <div className="h-screen w-screen bg-white overflow-hidden relative">
+    <div className="min-h-screen w-screen bg-white overflow-y-auto overflow-x-hidden relative">
       <AnimatePresence mode="wait">
         {phase === 'pre-dispatch' ? (
           <motion.div
             key="pre-dispatch"
-            className="h-full flex flex-col relative overflow-hidden"
+            className="min-h-screen flex flex-col relative"
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.4 }}
           >
 
-            {/* Header */}
-            <div className="px-6 pt-8 pb-4 flex items-center justify-between relative z-10">
+            {/* Header — sticky */}
+            <div className="px-6 py-4 flex items-center justify-between sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
               <div className="flex items-center gap-3">
                 <Link href="/">
                   <div className="w-9 h-9 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center hover:bg-orange-100 transition-colors cursor-pointer shrink-0">
@@ -339,54 +350,46 @@ export default function CivilianPage() {
             {/* Main content area */}
             <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 relative z-10">
 
-<<<<<<< HEAD
-  {/* ── Map Rectangle behind SOS button ──────── */ }
-  <div className="relative w-full -mx-6 overflow-hidden" style={{ width: 'calc(100% + 3rem)', height: 280 }}>
-    {/* Map layer */}
-    <div
-      className="absolute inset-0 pointer-events-none"
-      style={{
-        filter: 'blur(0.5px)',
-        opacity: 0.45,
-        WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
-        maskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
-      }}
-    >
-      <WaastaMap
-        center={userLocation ?? undefined}
-        zoom={13}
-        markers={[]}
-        className="h-full w-full"
-      />
-    </div>
-    {/* SOS button centered on top */}
-    <div className="absolute inset-0 flex items-center justify-center">
-      <SOSButton
-        onPress={() => {
-          if (!isActive) {
-            // SOS pressed
-          }
-        }}
-        isActive={isActive}
-      />
-    </div>
-  </div>
-=======
-              {/* SOS Button */}
-              <SOSButton
-                onPress={() => {}}
-                isActive={store.agentStatus !== 'idle'}
-              />
->>>>>>> c95d9ab977ad9e2bb87432b1745a598991768739
+              {/* ── Map Rectangle behind SOS button ──────── */}
+              <div className="relative w-full -mx-6 overflow-hidden" style={{ width: 'calc(100% + 3rem)', height: 280 }}>
+                {/* Map layer */}
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    filter: 'blur(0.5px)',
+                    opacity: 0.45,
+                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
+                    maskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
+                  }}
+                >
+                  <WaastaMap
+                    center={userLocation ?? undefined}
+                    zoom={13}
+                    markers={[]}
+                    className="h-full w-full"
+                  />
+                </div>
+                {/* SOS button centered on top */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <SOSButton
+                    onPress={() => {
+                      if (!isActive) {
+                        // SOS pressed
+                      }
+                    }}
+                    isActive={isActive}
+                  />
+                </div>
+              </div>
 
-  {/* Status / Transcript stream */ }
-  <div className="w-full max-w-sm">
-    <TranscriptStream
-      transcript={store.transcript}
-      agentStatus={store.agentStatus}
-      landmark={store.incident?.landmark}
-    />
-  </div>
+              {/* Status / Transcript stream */}
+              <div className="w-full max-w-sm">
+                <TranscriptStream
+                  transcript={store.transcript}
+                  agentStatus={store.agentStatus}
+                  landmark={store.incident?.landmark}
+                />
+              </div>
 
   {/* Error message */ }
   <AnimatePresence>
@@ -425,37 +428,35 @@ export default function CivilianPage() {
     )}
   </AnimatePresence>
 
-  {/* Vapi AI Voice Call — show when idle */ }
-  {
-    !isActive && VAPI_ASSISTANT_ID && (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-sm"
-      >
-        <EmergencyCall
-          assistantId={VAPI_ASSISTANT_ID}
-          onTranscript={(text, role) => {
-            if (role === 'user') store.setTranscript(text);
-          }}
-          onCallStart={() => store.setAgentStatus('listening')}
-          onCallEnd={() => {
-            if (store.agentStatus === 'listening') {
-              store.setAgentStatus('idle');
-            }
-          }}
-          onIncidentReported={(data) => {
-            // Vapi webhook handles incident creation server-side.
-            // Here we just update UI to show "analyzing" state.
-            store.setAgentStatus('analyzing');
-            store.setTranscript(
-              store.transcript || `${data.incident_type} near ${data.landmark}`
-            );
-          }}
-        />
-      </motion.div>
-    )
-  }
+              {/* Vapi AI Voice Call — show when idle */}
+              {!isActive && VAPI_ASSISTANT_ID && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full max-w-sm"
+                >
+                  <EmergencyCall
+                    assistantId={VAPI_ASSISTANT_ID}
+                    onTranscript={(text, role) => {
+                      if (role === 'user') store.setTranscript(text);
+                    }}
+                    onCallStart={() => store.setAgentStatus('listening')}
+                    onCallEnd={() => {
+                      if (store.agentStatus === 'listening') {
+                        store.setAgentStatus('idle');
+                      }
+                    }}
+                    onIncidentReported={(data) => {
+                      // Vapi webhook handles incident creation server-side.
+                      // Here we just update UI to show "analyzing" state.
+                      store.setAgentStatus('analyzing');
+                      store.setTranscript(
+                        store.transcript || `${data.incident_type} near ${data.landmark}`
+                      );
+                    }}
+                  />
+                </motion.div>
+              )}
 
   {/* Input options — show when idle */ }
   {
@@ -557,108 +558,102 @@ export default function CivilianPage() {
           <div className="flex-1 h-px bg-orange-100" />
         </div>
 
-        {/* ── TEXT INPUT ──────────────────────────── */}
-        <div className="rounded-2xl bg-orange-50/80 border border-orange-200/50 overflow-hidden">
-          <div className="px-4 pt-3 pb-2">
-            <div className="flex items-center gap-2 mb-2">
-              <Phone className="w-3.5 h-3.5 text-zinc-500" />
-              <p className="text-xs font-medium text-zinc-400">Type Emergency Details</p>
+                  {/* ── TEXT INPUT ──────────────────────────── */}
+                  <div className="rounded-2xl bg-orange-50/80 border border-orange-200/50 overflow-hidden">
+                    <div className="px-4 pt-3 pb-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Phone className="w-3.5 h-3.5 text-zinc-500" />
+                        <p className="text-xs font-medium text-zinc-400">Type Emergency Details</p>
+                      </div>
+                      <textarea
+                        ref={textAreaRef}
+                        value={textInput}
+                        onChange={(e) => setTextInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && e.ctrlKey && canSubmitText) {
+                            handleTextSubmit();
+                          }
+                        }}
+                        placeholder="Describe what's happening, location, injuries... (Ctrl+Enter to send)"
+                        rows={3}
+                        className="w-full bg-transparent text-sm text-zinc-400 placeholder-zinc-600 resize-none outline-none leading-relaxed"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between px-4 pb-3">
+                      <span className="text-[10px] text-zinc-600">
+                        {textInput.length < 10
+                          ? `${10 - textInput.length} more chars needed`
+                          : `${textInput.length} chars`}
+                      </span>
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleTextSubmit}
+                        disabled={!canSubmitText}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all shadow-sm"
+                      >
+                        <Send className="w-3 h-3" />
+                        Send Emergency
+                      </motion.button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
             </div>
-            <textarea
-              ref={textAreaRef}
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.ctrlKey && canSubmitText) {
-                  handleTextSubmit();
-                }
-              }}
-              placeholder="Describe what's happening, location, injuries... (Ctrl+Enter to send)"
-              rows={3}
-              className="w-full bg-transparent text-sm text-zinc-400 placeholder-zinc-600 resize-none outline-none leading-relaxed"
-            />
-          </div>
-          <div className="flex items-center justify-between px-4 pb-3">
-            <span className="text-[10px] text-zinc-600">
-              {textInput.length < 10
-                ? `${10 - textInput.length} more chars needed`
-                : `${textInput.length} chars`}
-            </span>
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={handleTextSubmit}
-              disabled={!canSubmitText}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all shadow-sm"
-            >
-              <Send className="w-3 h-3" />
-              Send Emergency
-            </motion.button>
-          </div>
-        </div>
-      </motion.div>
-    )
-  }
-            </div >
 
-    {/* Bottom bar */ }
-<<<<<<< HEAD
-    < div className = "px-6 py-4 flex items-center justify-center" >
-      <div className="flex items-center gap-1.5 text-zinc-500 text-xs">
-=======
+            {/* Bottom bar */}
             <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-zinc-700 text-xs">
->>>>>>> c95d9ab977ad9e2bb87432b1745a598991768739
-            <AlertTriangle className="w-3 h-3" />
-            <span>For genuine emergencies only</span>
-          </div>
-          {/* Demo trigger — one-click simulation */}
-          {!isActive && (
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={async () => {
-                store.setAgentStatus('analyzing');
-                store.setTranscript('Running demo simulation...');
-                try {
-                  const res = await fetch('/api/demo/trigger', { method: 'POST' });
-                  const data = await res.json();
-                  if (data.incident_id) {
-                    store.setIncidentId(data.incident_id);
-                    store.setBroadcastId(data.broadcast_id || null);
-                    store.setTranscript(data.transcript || '');
-                    store.setAgentStatus('broadcasting');
-                  }
-                } catch {
-                  store.setAgentStatus('idle');
-                }
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-600/10 border border-amber-600/20 text-amber-400 hover:bg-amber-600/20 transition-colors text-xs"
-            >
-              <Zap className="w-3 h-3" />
-              Demo
-            </motion.button>
-          )}
-        </div>
-      </motion.div>
+              <div className="flex items-center gap-1.5 text-zinc-700 text-xs">
+                <AlertTriangle className="w-3 h-3" />
+                <span>For genuine emergencies only</span>
+              </div>
+              {/* Demo trigger — one-click simulation */}
+              {!isActive && (
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={async () => {
+                    store.setAgentStatus('analyzing');
+                    store.setTranscript('Running demo simulation...');
+                    try {
+                      const res = await fetch('/api/demo/trigger', { method: 'POST' });
+                      const data = await res.json();
+                      if (data.incident_id) {
+                        store.setIncidentId(data.incident_id);
+                        store.setBroadcastId(data.broadcast_id || null);
+                        store.setTranscript(data.transcript || '');
+                        store.setAgentStatus('broadcasting');
+                      }
+                    } catch {
+                      store.setAgentStatus('idle');
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-600/10 border border-amber-600/20 text-amber-400 hover:bg-amber-600/20 transition-colors text-xs"
+                >
+                  <Zap className="w-3 h-3" />
+                  Demo
+                </motion.button>
+              )}
+            </div>
+          </motion.div>
         ) : (
-    <motion.div
-      key="tracking"
-      className="h-full flex flex-col"
-      initial={{ opacity: 0, scale: 1.05 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5 }}
-    >
-      {/* Full-screen map */}
-      <div className="flex-1 relative">
-        <WaastaMap
-          markers={mapMarkers}
-          flyTo={store.incident?.lat && store.incident?.lng ? {
-            lat: store.incident.lat,
-            lng: store.incident.lng,
-          } : null}
-          zoom={14}
-        />
+          <motion.div
+            key="tracking"
+            className="h-full flex flex-col"
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            {/* Full-screen map */}
+            <div className="flex-1 relative">
+              <WaastaMap
+                markers={mapMarkers}
+                flyTo={store.incident?.lat && store.incident?.lng ? {
+                  lat: store.incident.lat,
+                  lng: store.incident.lng,
+                } : null}
+                zoom={14}
+              />
 
         {/* Top overlay */}
         <div className="absolute top-0 left-0 right-0 p-4 pt-10 z-[1000]">
@@ -674,27 +669,27 @@ export default function CivilianPage() {
             </motion.div>
           </div>
 
-          {/* Quick info chips */}
-          {store.incident && (
-            <div className="flex items-center gap-2 mt-3 flex-wrap">
-              {store.incident.landmark && (
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50/80 border border-orange-200/50 backdrop-blur-sm">
-                  <MapPin className="w-3 h-3 text-orange-600" />
-                  <span className="text-xs text-zinc-400">{store.incident.landmark}</span>
-                </div>
-              )}
-              {store.eta && (
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50/80 border border-orange-200/50 backdrop-blur-sm">
-                  <Clock className="w-3 h-3 text-amber-400" />
-                  <span className="text-xs text-zinc-400">
-                    ~{Math.ceil(store.eta / 60)} min ETA
-                  </span>
-                </div>
-              )}
+                {/* Quick info chips */}
+                {store.incident && (
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    {store.incident.landmark && (
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50/80 border border-orange-200/50 backdrop-blur-sm">
+                        <MapPin className="w-3 h-3 text-orange-600" />
+                        <span className="text-xs text-zinc-400">{store.incident.landmark}</span>
+                      </div>
+                    )}
+                    {store.eta && (
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50/80 border border-orange-200/50 backdrop-blur-sm">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span className="text-xs text-zinc-400">
+                          ~{Math.ceil(store.eta / 60)} min ETA
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
 
       {/* Bottom tracking sheet */}
       {store.incident && (

@@ -1,128 +1,115 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useMemo } from 'react';
+import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls, MapRoute } from '@/components/ui/map';
 import { KARACHI_CENTER } from '@/lib/constants';
+import { waypointsToGeoJSON } from '@/lib/routing';
 
-const PING_ANIMATION = `
-  @keyframes map-ping {
-    0% { transform: scale(1); opacity: 0.8; }
-    100% { transform: scale(3.5); opacity: 0; }
-  }
-`;
-
-// Icon factory — only called client-side
-function createIcon(color: string, size: number = 12, isPing: boolean = false): L.DivIcon {
-  const pingHtml = isPing ? `<div style="
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    border-radius: 50%;
-    background: ${color};
-    animation: map-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-  "></div>` : '';
-
-  return L.divIcon({
-    className: '',
-    html: `<div style="position: relative; width: ${size}px; height: ${size}px;">
-      ${pingHtml}
-      <div style="
-        position: relative;
-        z-index: 10;
-        width: 100%; height: 100%;
-        background: ${color};
-        border-radius: 50%;
-        border: 2px solid rgba(255,255,255,0.7);
-        box-shadow: 0 0 ${size}px ${color}88;
-      "></div>
-    </div>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-}
-
-const ICON_MAP: Record<string, { color: string; size: number }> = {
-  incident: { color: '#dc2626', size: 16 },
-  ambulance: { color: '#22c55e', size: 14 },
-  institute: { color: '#3b82f6', size: 10 },
-  default: { color: '#dc2626', size: 12 },
-};
-
-// Auto-pan to a position
-function FlyTo({ lat, lng, zoom }: { lat: number; lng: number; zoom?: number }) {
-  const map = useMap();
-  useEffect(() => {
-    if (lat && lng) {
-      map.flyTo([lat, lng], zoom ?? 14, { duration: 1.5 });
-    }
-  }, [lat, lng, zoom, map]);
-  return null;
-}
-
-export interface MapMarker {
+export interface MapMarkerData {
   lat: number;
   lng: number;
   iconType?: 'incident' | 'ambulance' | 'institute';
   popup?: string;
 }
 
-interface MapProps {
+export type { MapMarkerData as MapMarker };
+
+const ICON_STYLES: Record<string, { bg: string; border: string; size: string; ping?: boolean }> = {
+  incident:  { bg: 'bg-red-500',     border: 'border-white',     size: 'h-4 w-4', ping: true },
+  ambulance: { bg: 'bg-emerald-500', border: 'border-white',     size: 'h-3.5 w-3.5' },
+  institute: { bg: 'bg-blue-500',    border: 'border-blue-200',  size: 'h-3 w-3' },
+  default:   { bg: 'bg-orange-500',  border: 'border-white',     size: 'h-3.5 w-3.5' },
+};
+
+interface WaastaMapProps {
   center?: { lat: number; lng: number };
   zoom?: number;
-  markers?: MapMarker[];
+  markers?: MapMarkerData[];
   flyTo?: { lat: number; lng: number } | null;
   className?: string;
+  // Route props
+  routeWaypoints?: [number, number][] | null;  // [lat, lng] pairs
+  routeProgressStep?: number | null;
 }
 
 export default function WaastaMap({
   center = KARACHI_CENTER,
-  zoom = 12,
+  zoom = 13,
   markers = [],
-  flyTo,
   className = 'h-full w-full',
-}: MapProps) {
-  const [mounted, setMounted] = useState(false);
+  routeWaypoints,
+  routeProgressStep,
+}: WaastaMapProps) {
+  // Convert waypoints to GeoJSON [lng, lat] for MapLibre
+  const fullRouteCoords = useMemo(() => {
+    if (!routeWaypoints || routeWaypoints.length < 2) return null;
+    return waypointsToGeoJSON(routeWaypoints);
+  }, [routeWaypoints]);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return (
-      <div className={`${className} bg-orange-50 flex items-center justify-center`}>
-        <div className="text-zinc-600 text-sm">Loading map...</div>
-      </div>
-    );
-  }
+  const progressCoords = useMemo(() => {
+    if (!routeWaypoints || routeWaypoints.length < 2) return null;
+    const step = routeProgressStep ?? 0;
+    if (step < 1) return null;
+    const travelled = routeWaypoints.slice(0, step + 1);
+    if (travelled.length < 2) return null;
+    return waypointsToGeoJSON(travelled);
+  }, [routeWaypoints, routeProgressStep]);
 
   return (
-    <MapContainer
-      center={[center.lat, center.lng]}
-      zoom={zoom}
-      className={className}
-      zoomControl={false}
-      attributionControl={false}
-    >
-      <style>{PING_ANIMATION}</style>
-      <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-        attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-      />
-      {flyTo && <FlyTo lat={flyTo.lat} lng={flyTo.lng} />}
-      {markers.map((m, i) => {
-        const iconConf = ICON_MAP[m.iconType || 'default'];
-        const isPing = m.iconType === 'incident';
-        return (
-          <Marker key={`${i}-${m.lat}-${m.lng}`} position={[m.lat, m.lng]} icon={createIcon(iconConf.color, iconConf.size, isPing)}>
-            {m.popup && (
-              <Popup>
-                <span className="text-xs text-zinc-900">{m.popup}</span>
-              </Popup>
-            )}
-          </Marker>
-        );
-      })}
-    </MapContainer>
+    <div className={className}>
+      <Map
+        center={[center.lng, center.lat]}
+        zoom={zoom}
+        theme="light"
+      >
+        <MapControls position="bottom-right" showZoom />
+
+        {/* Full route — light gray dashed line */}
+        {fullRouteCoords && (
+          <MapRoute
+            coordinates={fullRouteCoords}
+            color="#d1d5db"
+            width={5}
+            opacity={0.6}
+          />
+        )}
+
+        {/* Progress line — orange, shows distance covered */}
+        {progressCoords && (
+          <MapRoute
+            coordinates={progressCoords}
+            color="#ea580c"
+            width={5}
+            opacity={1}
+          />
+        )}
+
+        {/* Markers */}
+        {markers.map((m, i) => {
+          const style = ICON_STYLES[m.iconType || 'default'];
+          return (
+            <MapMarker
+              key={`${m.iconType}-${i}-${m.lat.toFixed(4)}-${m.lng.toFixed(4)}`}
+              longitude={m.lng}
+              latitude={m.lat}
+            >
+              <MarkerContent>
+                <div className="relative flex items-center justify-center">
+                  {style.ping && (
+                    <div className={`absolute ${style.size} rounded-full ${style.bg} opacity-40 animate-ping`} />
+                  )}
+                  <div className={`relative ${style.size} rounded-full ${style.bg} ${style.border} border-2 shadow-lg`} />
+                </div>
+              </MarkerContent>
+              {m.popup && (
+                <MarkerPopup>
+                  <p className="text-xs font-medium">{m.popup}</p>
+                </MarkerPopup>
+              )}
+            </MapMarker>
+          );
+        })}
+      </Map>
+    </div>
   );
 }
