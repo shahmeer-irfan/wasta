@@ -1,8 +1,9 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Shield, Phone, Building2, ArrowRight } from 'lucide-react';
+import { Phone, Building2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 // Heartbeat ECG waveform path (normalized to an 800x160 viewBox)
 const HEARTBEAT_PATH =
@@ -60,14 +61,14 @@ export default function Home() {
         className="mb-12 text-center relative z-10"
       >
         <motion.div
-          className="w-20 h-20 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4"
+          className="w-20 h-20 rounded-3xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4 overflow-hidden relative"
           animate={{ boxShadow: ['0 0 20px rgba(249,115,22,0.15)', '0 0 40px rgba(249,115,22,0.35)', '0 0 20px rgba(249,115,22,0.15)'] }}
           transition={{ duration: 2.4, repeat: Infinity }}
         >
-          <Shield className="w-10 h-10 text-orange-500" />
+          <Image src="/logo.png" alt="Waasta Logo" fill className="object-cover" />
         </motion.div>
         <h1 className="text-3xl font-black text-zinc-900 tracking-tight">
-          VAASTA
+          WAASTA
         </h1>
         <p className="text-sm text-zinc-500 mt-1">
           AI-Powered Emergency Response · Karachi
@@ -139,7 +140,7 @@ export default function Home() {
         className="mt-12 text-center relative z-10"
       >
         <p className="text-[10px] text-zinc-500">
-          Vaasta 2.0 · LangGraph + Groq + Supabase Realtime
+          Waasta 2.0 · LangGraph + Groq + Supabase Realtime
         </p>
       </motion.div>
     </div>

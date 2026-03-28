@@ -4,9 +4,11 @@ import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Shield, Activity, Radio, MapPin, Clock, Ambulance,
-  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2
+  Activity, Radio, MapPin, Clock, Ambulance,
+  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft
 } from 'lucide-react';
+import Link from 'next/link';
+import Image from 'next/image';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import BroadcastModal from '@/components/institution/BroadcastModal';
@@ -15,16 +17,16 @@ import { useInstitutionStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '@/lib/constants';
 const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
-import type { MapMarker } from '@/components/maps/VaastaMap';
+import type { MapMarker } from '@/components/maps/WaastaMap';
 
 import type { Incident, IncidentBroadcast, Institute, Resource } from '@/types';
 
-const VaastaMap = dynamic(() => import('@/components/maps/VaastaMap'), {
+const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
   ssr: false,
   loading: () => <div className="h-full w-full bg-orange-50 animate-pulse" />,
 });
 
-const DEMO_INSTITUTE_ID_KEY = 'vaasta_institute_id';
+const DEMO_INSTITUTE_ID_KEY = 'waasta_institute_id';
 
 // Icon map for incident types
 const INCIDENT_ICONS: Record<string, React.ReactNode> = {
@@ -257,6 +259,11 @@ export default function InstitutionDashboard() {
     ['dispatched', 'en_route'].includes(r.status)
   ).length;
 
+  const selectedIncidentData = selectedIncident ? activeIncidents.find(i => i.id === selectedIncident) : null;
+  const flyToPos = selectedIncidentData?.lat && selectedIncidentData?.lng
+    ? { lat: selectedIncidentData.lat, lng: selectedIncidentData.lng }
+    : undefined;
+
   return (
     <div className="h-screen w-screen bg-white flex flex-col overflow-hidden">
       {/* Broadcast Modal */}
@@ -274,12 +281,17 @@ export default function InstitutionDashboard() {
       {/* ── Top Bar ─────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-5 py-3 border-b border-orange-200/60 bg-white/90 backdrop-blur-sm shrink-0 gap-3 sm:gap-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-orange-500/15 border border-orange-500/25 flex items-center justify-center shrink-0">
-            <Shield className="w-4 h-4 text-orange-500" />
+          <Link href="/">
+            <div className="w-8 h-8 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center hover:bg-orange-100 transition-colors cursor-pointer shrink-0">
+              <ChevronLeft className="w-4 h-4 text-orange-600" />
+            </div>
+          </Link>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden relative shadow-sm border border-orange-200/50">
+            <Image src="/logo.png" alt="Waasta" fill className="object-cover" />
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-sm font-bold text-zinc-900 tracking-tight leading-none truncate">
-              VAASTA WAR ROOM
+              WAASTA WAR ROOM
             </h1>
             <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
               {institute ? (
@@ -336,7 +348,7 @@ export default function InstitutionDashboard() {
       <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
         {/* Map */}
         <div className="flex-1 relative min-h-[40vh] md:min-h-0 bg-orange-50">
-          <VaastaMap markers={mapMarkers} zoom={12} />
+          <WaastaMap markers={mapMarkers} zoom={12} flyTo={flyToPos} />
 
           {/* Map legend */}
           <div className="absolute bottom-4 left-4 right-4 md:right-auto z-[1000] flex md:flex-col gap-1.5 bg-white/90 backdrop-blur-sm border border-orange-200/60 rounded-xl p-2 md:p-3 overflow-x-auto shadow-sm">
@@ -387,14 +399,15 @@ export default function InstitutionDashboard() {
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     exit={{ opacity: 0, x: -20, scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    onClick={() => setSelectedIncident(isSelected ? null : incident.id)}
+                    className="cursor-pointer"
                   >
                     <Card
-                      className={`bg-orange-50/60 border-orange-200/60 p-3 cursor-pointer transition-all duration-200 ${
+                      className={`relative overflow-hidden transition-all duration-300 ${
                         isSelected
-                          ? 'border-orange-500/40 bg-orange-100/60 shadow-lg shadow-orange-500/5'
-                          : 'hover:bg-orange-100/50 hover:border-orange-200/60'
-                      }`}
-                      onClick={() => setSelectedIncident(isSelected ? null : incident.id)}
+                          ? 'border-[2px] border-orange-500 bg-orange-100 shadow-[0_8px_30px_rgba(249,115,22,0.25)] scale-[1.02] z-20'
+                          : 'bg-white border-orange-200/60 hover:bg-orange-50 hover:border-orange-300 hover:shadow-md'
+                      } p-3`}
                     >
                       {/* Top row */}
                       <div className="flex items-start justify-between mb-2">
@@ -416,15 +429,24 @@ export default function InstitutionDashboard() {
                               : 'Unknown'}
                           </span>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className={`text-[9px] shrink-0 ${statusCfg.cls}`}
-                        >
-                          {incident.status === 'intake' && (
-                            <Loader2 className="w-2.5 h-2.5 mr-1 animate-spin" />
+                        
+
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          {isSelected && incident.lat && (
+                            <span className="text-[10px] font-bold text-orange-600 flex items-center bg-orange-500/10 px-1.5 py-0.5 rounded animate-pulse">
+                              <MapPin className="w-2.5 h-2.5 mr-0.5" /> TRACKING
+                            </span>
                           )}
-                          {statusCfg.label}
-                        </Badge>
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] ${statusCfg.cls}`}
+                          >
+                            {incident.status === 'intake' && (
+                              <Loader2 className="w-2.5 h-2.5 mr-1 animate-spin" />
+                            )}
+                            {statusCfg.label}
+                          </Badge>
+                        </div>
                       </div>
 
                       {/* Location */}

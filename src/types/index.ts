@@ -1,5 +1,5 @@
 // ============================================================
-// VAASTA — Core Type Definitions
+// WAASTA — Core Type Definitions
 // ============================================================
 
 export interface Institute {

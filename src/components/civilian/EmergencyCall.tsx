@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Phone, PhoneOff, Mic, Volume2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { useVaastaStore } from '@/lib/store';
+import { useWaastaStore } from '@/lib/store';
 
 interface EmergencyCallProps {
   assistantId: string;
@@ -27,7 +27,7 @@ export default function EmergencyCall({
   const [isConnecting, setIsConnecting] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const store = useVaastaStore();
+  const store = useWaastaStore();
 
   // Initialize Vapi SDK lazily (client-side only)
   const getVapi = useCallback(async () => {
@@ -215,18 +215,33 @@ export default function EmergencyCall({
             </div>
 
             {/* Call controls */}
-            <div className="px-4 pb-4 flex items-center justify-center gap-4">
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                onClick={toggleMute}
-                className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors ${
-                  isMuted
-                    ? 'bg-amber-600/20 border border-amber-600/30 text-amber-400'
-                    : 'bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                {isMuted ? <Volume2 className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-              </motion.button>
+            <div className="px-4 pb-4 flex items-center justify-center gap-6">
+              
+              <div className="relative flex items-center justify-center w-14 h-14">
+                {/* ── Audio Ripples tied to voice volume ── */}
+                {!isMuted && normalizedVolume > 0.05 && (
+                  <motion.div
+                    className="absolute inset-0 rounded-full bg-orange-500/30 blur-sm pointer-events-none"
+                    animate={{ 
+                      scale: 1 + (normalizedVolume * 1.5),
+                      opacity: Math.max(0, 0.8 - normalizedVolume)
+                    }}
+                    transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
+                  />
+                )}
+                
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={toggleMute}
+                  className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-colors z-10 ${
+                    isMuted
+                      ? 'bg-amber-600/20 border border-amber-600/30 text-amber-400'
+                      : 'bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 shadow-lg'
+                  }`}
+                >
+                  {isMuted ? <Volume2 className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </motion.button>
+              </div>
 
               <motion.button
                 whileTap={{ scale: 0.9 }}

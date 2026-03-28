@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const call = await client.calls.create({
       to: institute_phone,
       from: process.env.TWILIO_PHONE_NUMBER!,
-      twiml: `<Response><Say voice="alice">Vaasta Emergency: Incoming emergency call being patched through.</Say><Dial>${caller_phone}</Dial></Response>`,
+      twiml: `<Response><Say voice="alice">Waasta Emergency: Incoming emergency call being patched through.</Say><Dial>${caller_phone}</Dial></Response>`,
     });
 
     // Log the call

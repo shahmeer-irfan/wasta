@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { buildVaastaGraph } from '@/lib/agents/graph';
+import { buildWaastaGraph } from '@/lib/agents/graph';
 import { createServiceClient } from '@/lib/supabase/client';
 import type { Incident, Institute } from '@/types';
 
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const institute = (broadcast as Record<string, unknown>).institutes as Institute;
 
   // Resume graph from pivot node
-  const graph = buildVaastaGraph();
+  const graph = buildWaastaGraph();
 
   try {
     const result = await graph.invoke({

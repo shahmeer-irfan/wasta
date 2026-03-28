@@ -1,5 +1,5 @@
 // ============================================================
-// VAASTA — LangGraph Emergency Response State Machine
+// WAASTA — LangGraph Emergency Response State Machine
 // Nodes: intake → geocoding → broker → pivot (HITL) → patch
 // ============================================================
 
@@ -11,7 +11,7 @@ import type { IncidentCard, LandmarkData } from '@/types';
 // ============================================================
 // STATE DEFINITION
 // ============================================================
-const VaastaState = Annotation.Root({
+const WaastaState = Annotation.Root({
   // Input
   transcript: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
   caller_phone: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
@@ -40,12 +40,12 @@ const VaastaState = Annotation.Root({
   error: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
 });
 
-export type VaastaStateType = typeof VaastaState.State;
+export type WaastaStateType = typeof WaastaState.State;
 
 // ============================================================
 // NODE 1: INTAKE — Parse transcript → IncidentCard
 // ============================================================
-async function intakeNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
+async function intakeNode(state: WaastaStateType): Promise<Partial<WaastaStateType>> {
   const { transcript, incident_id } = state;
 
   try {
@@ -78,7 +78,7 @@ async function intakeNode(state: VaastaStateType): Promise<Partial<VaastaStateTy
 // ============================================================
 // NODE 2: GEOCODING — Match landmark → [lat, lng]
 // ============================================================
-async function geocodingNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
+async function geocodingNode(state: WaastaStateType): Promise<Partial<WaastaStateType>> {
   const { incident_card, incident_id } = state;
   if (!incident_card) return { error: 'No incident card', status: 'error' };
 
@@ -138,7 +138,7 @@ async function geocodingNode(state: VaastaStateType): Promise<Partial<VaastaStat
 // ============================================================
 // NODE 3: BROKER — Find nearest institute, create broadcast
 // ============================================================
-async function brokerNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
+async function brokerNode(state: WaastaStateType): Promise<Partial<WaastaStateType>> {
   const { incident_card, incident_id, exclude_list } = state;
   if (!incident_card?.lat || !incident_card?.lng) {
     return { error: 'No geocoded location', status: 'error' };
@@ -200,7 +200,7 @@ async function brokerNode(state: VaastaStateType): Promise<Partial<VaastaStateTy
 // ============================================================
 // NODE 4: PIVOT — HITL Breakpoint (waits for external signal)
 // ============================================================
-async function pivotNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
+async function pivotNode(state: WaastaStateType): Promise<Partial<WaastaStateType>> {
   // This node is a checkpoint. In production, execution pauses here.
   // The graph resumes when the Institute Dashboard sends ACCEPT/REJECT
   // via the /api/agent/respond endpoint.
@@ -242,7 +242,7 @@ async function pivotNode(state: VaastaStateType): Promise<Partial<VaastaStateTyp
 // ============================================================
 // NODE 5: PATCH — Mark dispatched (voice handled via Vapi WebRTC)
 // ============================================================
-async function patchNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
+async function patchNode(state: WaastaStateType): Promise<Partial<WaastaStateType>> {
   const { incident_id, target_institute_id } = state;
 
   const supabase = createServiceClient();
@@ -284,7 +284,7 @@ async function patchNode(state: VaastaStateType): Promise<Partial<VaastaStateTyp
 // ============================================================
 // ROUTING LOGIC
 // ============================================================
-function routeAfterPivot(state: VaastaStateType): string {
+function routeAfterPivot(state: WaastaStateType): string {
   if (state.pivot_decision === 'ACCEPT') return 'patch';
   if (state.pivot_decision === 'REJECT') return 'broker'; // Loop back
   return END; // Pause — waiting for HITL input
@@ -293,8 +293,8 @@ function routeAfterPivot(state: VaastaStateType): string {
 // ============================================================
 // BUILD GRAPH
 // ============================================================
-export function buildVaastaGraph() {
-  const graph = new StateGraph(VaastaState)
+export function buildWaastaGraph() {
+  const graph = new StateGraph(WaastaState)
     .addNode('intake', intakeNode)
     .addNode('geocoding', geocodingNode)
     .addNode('broker', brokerNode)

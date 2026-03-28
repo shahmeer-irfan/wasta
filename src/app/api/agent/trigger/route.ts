@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { buildVaastaGraph } from '@/lib/agents/graph';
+import { buildWaastaGraph } from '@/lib/agents/graph';
 import { createServiceClient } from '@/lib/supabase/client';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Run the graph (will pause at pivot node)
-  const graph = buildVaastaGraph();
+  const graph = buildWaastaGraph();
 
   try {
     const result = await graph.invoke({

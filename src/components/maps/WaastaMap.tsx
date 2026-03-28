@@ -6,17 +6,37 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { KARACHI_CENTER } from '@/lib/constants';
 
+const PING_ANIMATION = `
+  @keyframes map-ping {
+    0% { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(3.5); opacity: 0; }
+  }
+`;
+
 // Icon factory — only called client-side
-function createIcon(color: string, size: number = 12): L.DivIcon {
+function createIcon(color: string, size: number = 12, isPing: boolean = false): L.DivIcon {
+  const pingHtml = isPing ? `<div style="
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 50%;
+    background: ${color};
+    animation: map-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  "></div>` : '';
+
   return L.divIcon({
     className: '',
-    html: `<div style="
-      width: ${size}px; height: ${size}px;
-      background: ${color};
-      border-radius: 50%;
-      border: 2px solid rgba(255,255,255,0.3);
-      box-shadow: 0 0 ${size}px ${color}88;
-    "></div>`,
+    html: `<div style="position: relative; width: ${size}px; height: ${size}px;">
+      ${pingHtml}
+      <div style="
+        position: relative;
+        z-index: 10;
+        width: 100%; height: 100%;
+        background: ${color};
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.7);
+        box-shadow: 0 0 ${size}px ${color}88;
+      "></div>
+    </div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -55,7 +75,7 @@ interface MapProps {
   className?: string;
 }
 
-export default function VaastaMap({
+export default function WaastaMap({
   center = KARACHI_CENTER,
   zoom = 12,
   markers = [],
@@ -84,6 +104,7 @@ export default function VaastaMap({
       zoomControl={false}
       attributionControl={false}
     >
+      <style>{PING_ANIMATION}</style>
       <TileLayer
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
@@ -91,8 +112,9 @@ export default function VaastaMap({
       {flyTo && <FlyTo lat={flyTo.lat} lng={flyTo.lng} />}
       {markers.map((m, i) => {
         const iconConf = ICON_MAP[m.iconType || 'default'];
+        const isPing = m.iconType === 'incident';
         return (
-          <Marker key={i} position={[m.lat, m.lng]} icon={createIcon(iconConf.color, iconConf.size)}>
+          <Marker key={i} position={[m.lat, m.lng]} icon={createIcon(iconConf.color, iconConf.size, isPing)}>
             {m.popup && (
               <Popup>
                 <span className="text-xs text-zinc-900">{m.popup}</span>

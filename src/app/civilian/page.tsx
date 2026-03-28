@@ -3,18 +3,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
-import { Shield, AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock } from 'lucide-react';
+import { AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock, ChevronLeft } from 'lucide-react';
+import Link from 'next/link';
+import Image from 'next/image';
 import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
 import EmergencyCall from '@/components/civilian/EmergencyCall';
-import { useVaastaStore } from '@/lib/store';
+import { useWaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
 
 const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 
-const VaastaMap = dynamic(() => import('@/components/maps/VaastaMap'), {
+const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
   ssr: false,
   loading: () => <div className="h-full w-full bg-orange-50 animate-pulse" />,
 });
@@ -24,7 +26,7 @@ const VaastaMap = dynamic(() => import('@/components/maps/VaastaMap'), {
 type SpeechRecognitionAny = any;
 
 export default function CivilianPage() {
-  const store = useVaastaStore();
+  const store = useWaastaStore();
   const [phase, setPhase] = useState<'pre-dispatch' | 'tracking'>('pre-dispatch');
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resourcePosition, setResourcePosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -304,14 +306,21 @@ export default function CivilianPage() {
 
             {/* Header */}
             <div className="px-6 pt-8 pb-4 flex items-center justify-between relative z-10">
-              <div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <Shield className="w-5 h-5 text-orange-500" />
-                  <span className="text-lg font-black text-zinc-900 tracking-tight">
-                    VAASTA
-                  </span>
+              <div className="flex items-center gap-3">
+                <Link href="/">
+                  <div className="w-9 h-9 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center hover:bg-orange-100 transition-colors cursor-pointer shrink-0">
+                    <ChevronLeft className="w-5 h-5 text-orange-600" />
+                  </div>
+                </Link>
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <Image src="/logo.png" alt="Waasta" width={24} height={24} className="rounded-md" />
+                    <span className="text-lg font-black text-zinc-900 tracking-tight">
+                      WAASTA
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 ml-7">Emergency Response · Karachi</p>
                 </div>
-                <p className="text-xs text-zinc-500 ml-7">Emergency Response · Karachi</p>
               </div>
 
               {/* Reset button when active */}
@@ -346,7 +355,7 @@ export default function CivilianPage() {
                     maskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
                   }}
                 >
-                  <VaastaMap
+                  <WaastaMap
                     center={userLocation ?? undefined}
                     zoom={13}
                     markers={[]}
@@ -617,7 +626,7 @@ export default function CivilianPage() {
           >
             {/* Full-screen map */}
             <div className="flex-1 relative">
-              <VaastaMap
+              <WaastaMap
                 markers={mapMarkers}
                 flyTo={store.incident?.lat && store.incident?.lng ? {
                   lat: store.incident.lat,
@@ -629,8 +638,8 @@ export default function CivilianPage() {
               {/* Top overlay */}
               <div className="absolute top-0 left-0 right-0 p-4 pt-10 z-[1000]">
                 <div className="flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-orange-500" />
-                  <span className="text-sm font-semibold text-zinc-900">VAASTA</span>
+                  <Image src="/logo.png" alt="Waasta" width={20} height={20} className="rounded" />
+                  <span className="text-sm font-semibold text-zinc-900">WAASTA</span>
                   <motion.div
                     className="ml-auto px-3 py-1 rounded-full bg-emerald-600/20 border border-emerald-600/30"
                     animate={{ opacity: [1, 0.6, 1] }}

@@ -14,7 +14,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Vaasta — Emergency Response Broker',
+  title: 'Waasta — Emergency Response Broker',
   description: 'AI-powered emergency response orchestration for Karachi',
 };
 
