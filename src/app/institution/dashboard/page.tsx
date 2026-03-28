@@ -353,10 +353,11 @@ export default function InstitutionDashboard() {
 
   return (
     <div className="h-screen w-screen bg-white flex flex-col overflow-hidden">
-      {/* Broadcast Modal */}
-      <AnimatePresence>
+      {/* Broadcast Modal — key forces fresh mount per broadcast */}
+      <AnimatePresence mode="wait">
         {store.activeBroadcast && (
           <BroadcastModal
+            key={`modal-${store.activeBroadcast.id}`}
             broadcast={store.activeBroadcast}
             onAccept={() => handleResponse('ACCEPT')}
             onReject={() => handleResponse('REJECT')}
