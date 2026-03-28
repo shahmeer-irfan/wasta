@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Radio, MapPin, Clock, Ambulance,
-  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft
+  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft, RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -534,18 +534,17 @@ export default function InstitutionDashboard() {
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
-                            console.log('[DASHBOARD] Resolving incident', incident.id);
-                            await supabase.from('incidents').update({
-                              status: 'resolved',
-                              updated_at: new Date().toISOString(),
-                            }).eq('id', incident.id);
-                            // Free up the resource
+                            console.log('[DASHBOARD] Discarding incident', incident.id);
+                            // Free up the resource first
                             if (incident.assigned_resource) {
                               await supabase.from('resources').update({
                                 status: 'available',
                                 updated_at: new Date().toISOString(),
                               }).eq('id', incident.assigned_resource);
                             }
+                            // Delete from broadcasts and incidents tables completely
+                            await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
+                            await supabase.from('incidents').delete().eq('id', incident.id);
                             // Remove from local state
                             setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
                           }}
@@ -585,9 +584,30 @@ export default function InstitutionDashboard() {
                 <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5 font-semibold">Resources</p>
                 <div className="flex flex-wrap gap-1.5">
                   {resources.map((r) => (
-                    <div
+                    <motion.div
                       key={r.id}
+                      whileTap={{ scale: r.status !== 'available' ? 0.95 : 1 }}
+                      onClick={async () => {
+                        if (r.status === 'available') return;
+                        if (!window.confirm(`Force resource ${r.call_sign} to Available? This will abandon its current incident.`)) return;
+                        
+                        console.log(`[DASHBOARD] Forcing ${r.call_sign} to available...`);
+                        await supabase.from('resources').update({
+                          status: 'available',
+                          updated_at: new Date().toISOString()
+                        }).eq('id', r.id);
+
+                        const incident = allIncidents.find(i => i.assigned_resource === r.id);
+                        if (incident) {
+                          console.log(`[DASHBOARD] Deleting orphaned incident ${incident.id}`);
+                          await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
+                          await supabase.from('incidents').delete().eq('id', incident.id);
+                          setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
+                        }
+                      }}
                       className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
+                        r.status !== 'available' ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''
+                      } ${
                         r.status === 'available'
                           ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'
                           : r.status === 'dispatched' || r.status === 'en_route'
@@ -596,13 +616,17 @@ export default function InstitutionDashboard() {
                           ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
                           : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
                       }`}
+                      title={r.status !== 'available' ? `Click to Force ${r.call_sign} to Available` : ''}
                     >
                       <div className="w-1.5 h-1.5 rounded-full bg-current" />
                       {r.call_sign}
                       {r.status !== 'available' && (
-                        <span className="text-[8px] opacity-70">{r.status.replace('_', ' ')}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] opacity-70">{r.status.replace('_', ' ')}</span>
+                          <RefreshCw className="w-2.5 h-2.5 opacity-40 hover:opacity-100 transition-opacity" />
+                        </div>
                       )}
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               </div>
@@ -684,16 +708,39 @@ export default function InstitutionDashboard() {
                       DISPATCH AMBULANCE
                     </motion.button>
                   ) : (
-                    <div className="w-full py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-2">
-                      <Ambulance className="w-4 h-4" />
-                      {assignedRes?.call_sign || 'AMBULANCE'} DISPATCHED
-                      {dispatchable.status === 'en_route' && (
-                        <motion.span
-                          className="w-1.5 h-1.5 rounded-full bg-emerald-500"
-                          animate={{ opacity: [1, 0.3, 1] }}
-                          transition={{ duration: 1, repeat: Infinity }}
-                        />
-                      )}
+                    <div className="space-y-2">
+                      <div className="w-full py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-2">
+                        <Ambulance className="w-4 h-4" />
+                        {assignedRes?.call_sign || 'AMBULANCE'} DISPATCHED
+                        {dispatchable.status === 'en_route' && (
+                          <motion.span
+                            className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                          />
+                        )}
+                      </div>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`Force ${assignedRes?.call_sign || 'resource'} to Available? Incident will be deleted.`)) return;
+                          
+                          if (assignedRes) {
+                            await supabase.from('resources').update({
+                              status: 'available',
+                              updated_at: new Date().toISOString()
+                            }).eq('id', assignedRes.id);
+                          }
+                          
+                          await supabase.from('incident_broadcasts').delete().eq('incident_id', dispatchable.id);
+                          await supabase.from('incidents').delete().eq('id', dispatchable.id);
+                          setAllIncidents(prev => prev.filter(i => i.id !== dispatchable.id));
+                        }}
+                        className="w-full text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-semibold uppercase tracking-tighter flex items-center justify-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Recall & Free Resource
+                      </button>
                     </div>
                   )}
                 </div>

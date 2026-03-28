@@ -31,6 +31,7 @@
   * {
     border-color: hsl(var(--border));
   }
+
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
@@ -44,28 +45,47 @@
 .leaflet-container {
   background: #f4f4f5 !important;
 }
+
 .leaflet-control-zoom a {
   background: #ffffff !important;
   color: #09090b !important;
   border-color: #e4e4e7 !important;
 }
+
 .leaflet-control-attribution {
   background: rgba(255, 255, 255, 0.8) !important;
   color: #52525b !important;
 }
+
 .leaflet-control-attribution a {
   color: #3f3f46 !important;
 }
 
 /* Pulse animation for SOS */
 @keyframes sos-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.15); opacity: 0.8; }
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.15);
+    opacity: 0.8;
+  }
 }
 
 @keyframes sos-ring {
-  0% { transform: scale(1); opacity: 0.6; }
-  100% { transform: scale(2.5); opacity: 0; }
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
 }
 
 .sos-pulse {
@@ -80,9 +100,11 @@
 .glow-orange {
   box-shadow: 0 0 20px rgba(249, 115, 22, 0.4), 0 0 60px rgba(249, 115, 22, 0.15);
 }
+
 .glow-green {
   box-shadow: 0 0 15px rgba(34, 197, 94, 0.4), 0 0 45px rgba(34, 197, 94, 0.1);
 }
+
 .glow-amber {
   box-shadow: 0 0 15px rgba(245, 158, 11, 0.4), 0 0 45px rgba(245, 158, 11, 0.1);
 }
@@ -91,13 +113,16 @@
 ::-webkit-scrollbar {
   width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #ffffff;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #ffedd5;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #fdba74;
 }
@@ -106,6 +131,7 @@
 textarea {
   caret-color: #f97316;
 }
+
 textarea:focus {
   outline: none;
 }
@@ -114,7 +140,15 @@ textarea:focus {
 .input-panel-enter {
   animation: slideUp 0.25s ease-out;
 }
+
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

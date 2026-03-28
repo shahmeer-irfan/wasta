@@ -28,21 +28,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Incident not found' }, { status: 404 });
   }
 
-  // Find available resource
-  const { data: resource } = await supabase
+  // Find ALL available resources and pick the closest one
+  const { data: availableResources } = await supabase
     .from('resources')
     .select('*')
     .eq('institute_id', institute_id)
-    .eq('status', 'available')
-    .limit(1)
-    .single();
+    .eq('status', 'available');
 
-  if (!resource) {
+  if (!availableResources || availableResources.length === 0) {
     return NextResponse.json({ error: 'No available resources' }, { status: 409 });
   }
 
   const targetLat = incident.lat ?? 24.8607;
   const targetLng = incident.lng ?? 67.0011;
+
+  // Sort by straight-line distance
+  const sorted = [...availableResources].sort((a, b) => {
+    const distA = Math.sqrt(Math.pow(a.lat - targetLat, 2) + Math.pow(a.lng - targetLng, 2));
+    const distB = Math.sqrt(Math.pow(b.lat - targetLat, 2) + Math.pow(b.lng - targetLng, 2));
+    return distA - distB;
+  });
+
+  const resource = sorted[0];
+  console.log(`[DISPATCH] Selected closest resource: ${resource.call_sign} (ID: ${resource.id.substring(0,8)})`);
 
   // ── Fetch real road route from OSRM ──
   console.log('[DISPATCH] Fetching OSRM route...');
