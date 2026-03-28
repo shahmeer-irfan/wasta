@@ -121,11 +121,9 @@ export default function EmergencyCall({
 
       turnCountRef.current++;
 
-      // If incident reported, end after speaking
+      // If incident reported, stop further turns
       if (data.incident_id) {
-        setTimeout(() => {
-          endCall();
-        }, 2000);
+        turnCountRef.current = 999; // Prevent auto-restart
       }
 
     } catch (err) {
@@ -202,10 +200,15 @@ export default function EmergencyCall({
 
   // End the call
   const endCall = useCallback(() => {
+    console.log('[CALL] Ending call');
+    // Stop everything immediately
+    isProcessingRef.current = true; // Block any new processing
+    turnCountRef.current = 999; // Block auto-restart
     speechSynthesis.cancel();
-    mediaRecorderRef.current?.stop();
+    try { mediaRecorderRef.current?.stop(); } catch { /* ok */ }
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
+    mediaRecorderRef.current = null;
     setIsCallActive(false);
     setIsConnecting(false);
     setIsListening(false);
@@ -215,7 +218,7 @@ export default function EmergencyCall({
 
   // Auto-restart listening after AI finishes speaking
   useEffect(() => {
-    if (isCallActive && !isSpeaking && !isListening && !isProcessingRef.current && turnCountRef.current < 10) {
+    if (isCallActive && !isSpeaking && !isListening && !isProcessingRef.current && turnCountRef.current < 10 && streamRef.current) {
       const timeout = setTimeout(startListening, 500);
       return () => clearTimeout(timeout);
     }
