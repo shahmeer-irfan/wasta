@@ -37,6 +37,7 @@ export default function EmergencyCall({
   const chunksRef = useRef<Blob[]>([]);
   const isProcessingRef = useRef(false);
   const turnCountRef = useRef(0);
+  const endedRef = useRef(false); // Prevents any activity after end
 
   // Speak text using browser Speech Synthesis (FREE, works in Urdu)
   const speak = useCallback((text: string): Promise<void> => {
@@ -135,7 +136,7 @@ export default function EmergencyCall({
 
   // Start recording a turn
   const startListening = useCallback(() => {
-    if (!streamRef.current || isProcessingRef.current || isSpeaking) return;
+    if (endedRef.current || !streamRef.current || isProcessingRef.current || isSpeaking) return;
 
     chunksRef.current = [];
     setIsListening(true);
@@ -200,10 +201,11 @@ export default function EmergencyCall({
 
   // End the call
   const endCall = useCallback(() => {
+    if (endedRef.current) return; // Already ended
+    endedRef.current = true;
     console.log('[CALL] Ending call');
-    // Stop everything immediately
-    isProcessingRef.current = true; // Block any new processing
-    turnCountRef.current = 999; // Block auto-restart
+    isProcessingRef.current = true;
+    turnCountRef.current = 999;
     speechSynthesis.cancel();
     try { mediaRecorderRef.current?.stop(); } catch { /* ok */ }
     streamRef.current?.getTracks().forEach(t => t.stop());
@@ -218,6 +220,7 @@ export default function EmergencyCall({
 
   // Auto-restart listening after AI finishes speaking
   useEffect(() => {
+    if (endedRef.current) return;
     if (isCallActive && !isSpeaking && !isListening && !isProcessingRef.current && turnCountRef.current < 10 && streamRef.current) {
       const timeout = setTimeout(startListening, 500);
       return () => clearTimeout(timeout);

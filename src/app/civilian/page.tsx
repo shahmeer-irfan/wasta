@@ -211,7 +211,7 @@ export default function CivilianPage() {
             setEndVapiCall(true);
             setPhase('tracking');
             if (recent.accepted_by) {
-              const { data: inst } = await supabase.from('institutes').select('*').eq('id', recent.accepted_by).single();
+              const { data: inst } = await supabase.from('institutes').select('*').eq('id', recent.accepted_by).maybeSingle();
               if (inst) setInstitute(inst as Institute);
             }
           }
@@ -255,7 +255,7 @@ export default function CivilianPage() {
                 .from('institutes')
                 .select('*')
                 .eq('id', updated.accepted_by)
-                .single();
+                .maybeSingle();
               if (inst) setInstitute(inst as Institute);
             }
           }
@@ -267,7 +267,7 @@ export default function CivilianPage() {
                 .from('resources')
                 .select('*')
                 .eq('id', updated.assigned_resource)
-                .single();
+                .maybeSingle();
               if (res) {
                 store.setAssignedResource(res as Resource);
                 store.setAgentStatus('dispatched');
