@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Shield, Activity, Radio, MapPin, Clock, Ambulance,
+  Activity, Radio, MapPin, Clock, Ambulance,
   Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft
 } from 'lucide-react';
 import Link from 'next/link';
@@ -65,34 +65,6 @@ export default function InstitutionDashboard() {
   const [isResponding, setIsResponding] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
   const [, setTick] = useState(0); // for live time updates
-  const [isRinging, setIsRinging] = useState(false);
-  const audioRef = useRef<AudioContext | null>(null);
-
-  // Play a beep ring using Web Audio API (no external file needed)
-  const playRing = useCallback(() => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioRef.current = ctx;
-      const playBeep = (time: number) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 880;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(0.3, time);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
-        osc.start(time);
-        osc.stop(time + 0.4);
-      };
-      playBeep(ctx.currentTime);
-      playBeep(ctx.currentTime + 0.5);
-      playBeep(ctx.currentTime + 1.0);
-    } catch {
-      // Audio not supported — silent fail
-    }
-  }, []);
 
   // Refresh relative timestamps every 30s
   useEffect(() => {
@@ -179,9 +151,6 @@ export default function InstitutionDashboard() {
               ...broadcast,
               incidents: incident as Incident,
             });
-            // 🔔 Ring the dispatcher
-            setIsRinging(true);
-            playRing();
           }
         }
       )
@@ -240,8 +209,6 @@ export default function InstitutionDashboard() {
   const handleResponse = useCallback(async (decision: 'ACCEPT' | 'REJECT') => {
     if (!store.activeBroadcast) return;
     setIsResponding(true);
-    setIsRinging(false); // stop ringing when dispatcher acts
-
 
     try {
       await fetch('/api/agent/respond', {
