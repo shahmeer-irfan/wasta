@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildWaastaGraph } from '@/lib/agents/graph';
 import { createServiceClient } from '@/lib/supabase/client';
-
+import { reverseGeocode } from '@/lib/geocoding';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
 
       if (institutes?.length) {
         const nearest = institutes[0]; // Only one institute in demo
+        const resolvedName = await reverseGeocode(lat, lng);
         await supabase.from('incident_broadcasts').insert({
           incident_id: incident.id,
           institute_id: nearest.id,
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
         });
         await supabase.from('incidents').update({
           lat, lng,
+          landmark: resolvedName,
           status: 'broadcasting',
           updated_at: new Date().toISOString(),
         }).eq('id', incident.id);
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
           incident_id: incident.id,
           status: 'broadcasting',
           broadcast_id: null,
-          landmark: 'GPS Location',
+          landmark: resolvedName,
           lat, lng,
         });
       }

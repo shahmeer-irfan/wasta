@@ -7,6 +7,7 @@
 import { StateGraph, END, START, Annotation } from '@langchain/langgraph';
 import { KARACHI_LANDMARKS } from '@/lib/constants';
 import { createServiceClient } from '@/lib/supabase/client';
+import { reverseGeocode } from '@/lib/geocoding';
 import type { IncidentCard, LandmarkData } from '@/types';
 
 // ── State ────────────────────────────────────────────────────
@@ -156,12 +157,14 @@ async function geocodeNode(state: WaastaStateType): Promise<Partial<WaastaStateT
     // No landmark match — use incident's GPS coords (from trigger) or Karachi center
     const fallbackLat = incident_card.lat ?? 24.8607;
     const fallbackLng = incident_card.lng ?? 67.0011;
-    console.log('[GRAPH:GEOCODE] No landmark match, using fallback coords:', fallbackLat, fallbackLng);
+    const resolvedLandmark = incident_card.landmark || await reverseGeocode(fallbackLat, fallbackLng);
+    
+    console.log('[GRAPH:GEOCODE] No landmark match, using fallback coords:', fallbackLat, fallbackLng, 'Resolved name:', resolvedLandmark);
 
     await supabase.from('incidents').update({
       lat: fallbackLat,
       lng: fallbackLng,
-      landmark: incident_card.landmark || 'GPS Location',
+      landmark: resolvedLandmark,
       status: 'geocoded',
       updated_at: new Date().toISOString(),
     }).eq('id', incident_id);
@@ -170,8 +173,9 @@ async function geocodeNode(state: WaastaStateType): Promise<Partial<WaastaStateT
   // Use matched coords, or existing GPS, or Karachi center
   const finalLat = bestMatch?.lat ?? incident_card.lat ?? 24.8607;
   const finalLng = bestMatch?.lng ?? incident_card.lng ?? 67.0011;
+  const finalLandmark = bestMatch?.name ?? incident_card.landmark ?? await reverseGeocode(finalLat, finalLng);
 
-  console.log('[GRAPH:GEOCODE] Final coords:', finalLat, finalLng, bestMatch ? '(landmark)' : incident_card.lat ? '(GPS)' : '(default)');
+  console.log('[GRAPH:GEOCODE] Final coords:', finalLat, finalLng, finalLandmark);
 
   return {
     landmark_match: bestMatch,
@@ -180,7 +184,7 @@ async function geocodeNode(state: WaastaStateType): Promise<Partial<WaastaStateT
       lat: finalLat,
       lng: finalLng,
       zone: bestMatch?.zone ?? null,
-      landmark: bestMatch?.name ?? incident_card.landmark,
+      landmark: finalLandmark,
     },
     status: 'broadcasting',
   };
