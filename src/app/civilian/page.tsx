@@ -3,13 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
-<<<<<<< HEAD
-import { AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock, ChevronLeft } from 'lucide-react';
+import { AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock, ChevronLeft, Shield, Zap } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-=======
-import { Shield, AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock, Zap } from 'lucide-react';
->>>>>>> c95d9ab977ad9e2bb87432b1745a598991768739
 import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
