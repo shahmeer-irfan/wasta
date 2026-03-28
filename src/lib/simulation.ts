@@ -55,6 +55,40 @@ export async function simulateMovement({
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
   }
-
   console.log('[SIMULATION] Arrived on scene');
+
+  // Wait 1 minute (60,000 ms) for on-site process
+  console.log('[SIMULATION] Processing on-site for 1 minute...');
+  await new Promise((resolve) => setTimeout(resolve, 60000));
+  
+  console.log('[SIMULATION] Returning to base...');
+
+  // Mark incident as resolved, freeing up the pipeline if not already done manually
+  await supabase.from('incidents').update({
+    status: 'resolved',
+    updated_at: new Date().toISOString(),
+  }).eq('id', incidentId);
+
+  // Reverse waypoints for return trip
+  const returnWaypoints = [...waypoints].reverse();
+  const returnSteps = returnWaypoints.length - 1;
+
+  for (let step = 1; step <= returnSteps; step++) {
+    const [lat, lng] = returnWaypoints[step];
+    const isLast = step === returnSteps;
+
+    await supabase.from('resources').update({
+      lat,
+      lng,
+      status: isLast ? 'available' : 'returning',
+      updated_at: new Date().toISOString(),
+    }).eq('id', resourceId);
+
+    if (!isLast) {
+      // Use a faster interval for returning to speed up demo
+      await new Promise((resolve) => setTimeout(resolve, Math.max(1000, intervalMs / 2)));
+    }
+  }
+
+  console.log('[SIMULATION] Resource returned to base and is available again.');
 }
