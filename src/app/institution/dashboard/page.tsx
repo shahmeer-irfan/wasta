@@ -381,7 +381,7 @@ export default function InstitutionDashboard() {
             </div>
           </Link>
           <div className="flex items-center gap-1.5 overflow-hidden">
-            <Image src="/logo%20Background%20Removed.png" alt="Waasta" width={32} height={32} className="object-contain" priority />
+            <Image src="/logoBackgroundRemoved.png" alt="Waasta" width={32} height={32} className="object-contain" priority />
           </div>
           <div className="ml-[-4px]">
             <h1 className="text-lg font-black bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400 tracking-tight leading-none">

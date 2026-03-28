@@ -455,7 +455,7 @@ export default function CivilianPage() {
                 </Link>
                 <div>
                   <div className="flex items-center gap-1 mb-0.5">
-                    <Image src="/logo%20Background%20Removed.png" alt="Waasta" width={36} height={36} className="rounded-lg shadow-sm" priority />
+                    <Image src="/logoBackgroundRemoved.png" alt="Waasta" width={36} height={36} className="rounded-lg shadow-sm" priority />
                     <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400 tracking-tight">
                       WAASTA
                     </span>
@@ -720,7 +720,7 @@ export default function CivilianPage() {
         <div className="absolute top-0 left-0 right-0 p-4 pt-10 z-[1000]">
           <div className="flex items-center gap-1.5">
             <div className="w-7 h-7 relative">
-              <Image src="/logo%20Background%20Removed.png" alt="Waasta" fill className="object-contain" />
+              <Image src="/logoBackgroundRemoved.png" alt="Waasta" fill className="object-contain" />
             </div>
             <span className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400">WAASTA</span>
             <motion.div

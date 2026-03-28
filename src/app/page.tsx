@@ -38,7 +38,7 @@ export default function Home() {
           transition={{ duration: 2.8, repeat: Infinity }}
         >
           <Image 
-            src="/logo%20Background%20Removed.png" 
+            src="/logoBackgroundRemoved.png" 
             alt="Waasta Logo" 
             fill 
             className="object-contain" 
