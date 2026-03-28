@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildGuardianGraph } from '@/lib/agents/graph';
 import { createServiceClient } from '@/lib/supabase/client';
+import { simulateMovement } from '@/lib/simulation';
 import type { Incident, Institute } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -76,6 +77,19 @@ export async function POST(req: NextRequest) {
           assigned_resource: resource.id,
           status: 'dispatched',
         }).eq('id', incident.id);
+
+        // Trigger ambulance simulation (non-blocking)
+        if (incident.lat && incident.lng) {
+          simulateMovement({
+            resourceId: resource.id,
+            startLat: resource.lat,
+            startLng: resource.lng,
+            targetLat: incident.lat,
+            targetLng: incident.lng,
+            intervalMs: 2000,
+            steps: 25,
+          }).catch(console.error);
+        }
       }
     }
 

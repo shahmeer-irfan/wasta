@@ -92,7 +92,7 @@ export default function GuardianMap({
       {markers.map((m, i) => {
         const iconConf = ICON_MAP[m.iconType || 'default'];
         return (
-          <Marker key={i} position={[m.lat, m.lng]} icon={createIcon(iconConf.color, iconConf.size)}>
+          <Marker key={`${i}-${m.lat}-${m.lng}`} position={[m.lat, m.lng]} icon={createIcon(iconConf.color, iconConf.size)}>
             {m.popup && (
               <Popup>
                 <span className="text-xs text-zinc-900">{m.popup}</span>

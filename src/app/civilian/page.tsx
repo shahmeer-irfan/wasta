@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
-import { Shield, AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock } from 'lucide-react';
+import { Shield, AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock, Zap } from 'lucide-react';
 import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
@@ -200,18 +200,7 @@ export default function CivilianPage() {
               if (res) {
                 store.setAssignedResource(res as Resource);
                 setPhase('tracking');
-
-                if (updated.lat && updated.lng) {
-                  fetch('/api/simulate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      resourceId: res.id,
-                      targetLat: updated.lat,
-                      targetLng: updated.lng,
-                    }),
-                  });
-                }
+                // Simulation is triggered server-side in /api/agent/respond
               }
             }
           }
@@ -394,27 +383,13 @@ export default function CivilianPage() {
                         store.setAgentStatus('idle');
                       }
                     }}
-                    onIncidentReported={async (data) => {
+                    onIncidentReported={(data) => {
+                      // Vapi webhook handles incident creation server-side.
+                      // Here we just update UI to show "analyzing" state.
                       store.setAgentStatus('analyzing');
-                      try {
-                        const res = await fetch('/api/agent/trigger', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            transcript: store.transcript || `${data.incident_type} near ${data.landmark}`,
-                            caller_phone: '+92-300-0000000',
-                          }),
-                        });
-                        const result = await res.json();
-                        if (result.incident_id) {
-                          store.setIncidentId(result.incident_id);
-                          store.setBroadcastId(result.broadcast_id || null);
-                          store.setAgentStatus('broadcasting');
-                        }
-                      } catch (err) {
-                        console.error('Incident report failed:', err);
-                        store.setAgentStatus('idle');
-                      }
+                      store.setTranscript(
+                        store.transcript || `${data.incident_type} near ${data.landmark}`
+                      );
                     }}
                   />
                 </motion.div>
@@ -564,11 +539,39 @@ export default function CivilianPage() {
             </div>
 
             {/* Bottom bar */}
-            <div className="px-6 py-4 flex items-center justify-center">
+            <div className="px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-zinc-700 text-xs">
                 <AlertTriangle className="w-3 h-3" />
                 <span>For genuine emergencies only</span>
               </div>
+              {/* Demo trigger — one-click simulation */}
+              {!isActive && (
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={async () => {
+                    store.setAgentStatus('analyzing');
+                    store.setTranscript('Running demo simulation...');
+                    try {
+                      const res = await fetch('/api/demo/trigger', { method: 'POST' });
+                      const data = await res.json();
+                      if (data.incident_id) {
+                        store.setIncidentId(data.incident_id);
+                        store.setBroadcastId(data.broadcast_id || null);
+                        store.setTranscript(data.transcript || '');
+                        store.setAgentStatus('broadcasting');
+                      }
+                    } catch {
+                      store.setAgentStatus('idle');
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-600/10 border border-amber-600/20 text-amber-400 hover:bg-amber-600/20 transition-colors text-xs"
+                >
+                  <Zap className="w-3 h-3" />
+                  Demo
+                </motion.button>
+              )}
             </div>
           </motion.div>
         ) : (

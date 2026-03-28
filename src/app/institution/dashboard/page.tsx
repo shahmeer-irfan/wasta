@@ -69,6 +69,7 @@ export default function InstitutionDashboard() {
   // Play a beep ring using Web Audio API (no external file needed)
   const playRing = useCallback(() => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioRef.current = ctx;
       const playBeep = (time: number) => {
@@ -270,7 +271,7 @@ export default function InstitutionDashboard() {
     ...resources.map((r) => ({
       lat: r.lat,
       lng: r.lng,
-      iconType: r.status === 'available' ? 'ambulance' as const : 'incident' as const,
+      iconType: 'ambulance' as const,
       popup: `${r.call_sign} — ${r.status}`,
     })),
     ...(institute ? [{

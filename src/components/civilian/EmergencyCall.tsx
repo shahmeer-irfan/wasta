@@ -78,6 +78,20 @@ export default function EmergencyCall({
           }
         }
       }
+
+      // Tool-call results — extract incident_id from webhook response
+      if (msg.type === 'tool-calls-result' || msg.type === 'function-call-result') {
+        try {
+          const results = (msg.toolCallResult || msg.results || []) as Array<Record<string, unknown>>;
+          for (const r of results) {
+            const parsed = typeof r.result === 'string' ? JSON.parse(r.result) : r.result;
+            if (parsed?.incident_id) {
+              store.setIncidentId(parsed.incident_id);
+              store.setAgentStatus('broadcasting');
+            }
+          }
+        } catch { /* parse failed — non-critical */ }
+      }
     });
 
     vapi.on('volume-level', (level: number) => {
