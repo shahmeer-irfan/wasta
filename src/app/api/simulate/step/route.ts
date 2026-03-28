@@ -40,13 +40,20 @@ export async function POST(req: NextRequest) {
   const [lat, lng] = waypoints[currentStep];
   const isLast = currentStep >= totalSteps;
 
-  // Move resource
-  await supabase.from('resources').update({
+  // Move resource — ONLY if it hasn't been manually freed (Recall)
+  const { data: resData } = await supabase.from('resources').update({
     lat,
     lng,
     status: isLast ? 'on_scene' : 'en_route',
     updated_at: new Date().toISOString(),
-  }).eq('id', incident.assigned_resource);
+  }).eq('id', incident.assigned_resource)
+    .neq('status', 'available')
+    .select('id');
+
+  if (!resData || resData.length === 0) {
+    console.log(`[SIM] Aborting simulation for incident ${incident_id}: Resource was manually freed.`);
+    return NextResponse.json({ done: true, reason: 'resource_freed' });
+  }
 
   // Update progress
   await supabase.from('incidents').update({

@@ -840,7 +840,7 @@ export default function InstitutionDashboard() {
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!window.confirm(`Force ${assignedRes?.call_sign || 'resource'} to Available? Incident will be deleted.`)) return;
+                          if (!window.confirm(`Recall ${assignedRes?.call_sign || 'resource'} and free resource? Incident will be deleted.`)) return;
                           
                           if (assignedRes) {
                             await supabase.from('resources').update({
@@ -854,10 +854,10 @@ export default function InstitutionDashboard() {
                           setAllIncidents(prev => prev.filter(i => i.id !== dispatchable.id));
                           store.finishCall(); // Promote next queued call
                         }}
-                        className="w-full text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-semibold uppercase tracking-tighter flex items-center justify-center gap-1.5"
+                        className="w-full py-2.5 rounded-xl border-2 border-orange-100 text-orange-600 text-xs font-bold flex items-center justify-center gap-2 hover:bg-orange-50 transition-all active:scale-[0.98]"
                       >
-                        <RefreshCw className="w-3 h-3" />
-                        Recall & Free Resource
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        RECALL & FREE RESOURCE
                       </button>
                     </div>
                   )}
