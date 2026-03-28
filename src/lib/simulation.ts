@@ -25,12 +25,18 @@ export async function simulateMovement({
 
   console.log(`[SIMULATION] Starting: ${totalSteps} waypoints, ${intervalMs}ms interval`);
 
-  // Mark en_route
-  await supabase.from('incidents').update({
-    status: 'en_route',
-    route_progress_step: 0,
-    updated_at: new Date().toISOString(),
-  }).eq('id', incidentId);
+  // Mark both incident and resource as en_route immediately to drive UI transition
+  await Promise.all([
+    supabase.from('incidents').update({
+      status: 'en_route',
+      route_progress_step: 0,
+      updated_at: new Date().toISOString(),
+    }).eq('id', incidentId),
+    supabase.from('resources').update({
+      status: 'en_route',
+      updated_at: new Date().toISOString(),
+    }).eq('id', resourceId)
+  ]);
 
   for (let step = 1; step <= totalSteps; step++) {
     const [lat, lng] = waypoints[step];
