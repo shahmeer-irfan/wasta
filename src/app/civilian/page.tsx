@@ -363,38 +363,78 @@ export default function CivilianPage() {
         {phase === 'cancelled' || phase === 'completed' ? (
           <motion.div
             key="terminal"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            className="absolute inset-0 z-50 flex items-center justify-center bg-white p-6 h-full"
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={{
+              initial: { opacity: 0 },
+              animate: { opacity: 1, transition: { staggerChildren: 0.15 } },
+              exit: { opacity: 0 }
+            }}
+            className="absolute inset-0 z-50 flex items-center justify-center bg-white p-6 h-full overflow-hidden"
           >
-            <div className="max-w-md w-full text-center space-y-8">
-              <div className="flex justify-center">
-                <div className={`w-24 h-24 rounded-full flex items-center justify-center ${
-                  phase === 'completed' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'
+            {/* Subtle background flair */}
+            <div className={`absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b ${
+              phase === 'completed' ? 'from-emerald-50/50' : 'from-red-50/50'
+            } to-transparent pointer-events-none`} />
+            
+            <div className="relative z-10 max-w-sm w-full text-center space-y-8">
+              <motion.div 
+                variants={{
+                  initial: { scale: 0.5, opacity: 0 },
+                  animate: { scale: 1, opacity: 1, transition: { type: 'spring', damping: 12 } }
+                }}
+                className="flex justify-center"
+              >
+                <div className={`w-28 h-28 rounded-[2.5rem] flex items-center justify-center shadow-xl ${
+                  phase === 'completed' ? 'bg-emerald-500 text-white shadow-emerald-200' : 'bg-red-500 text-white shadow-red-200'
                 }`}>
                   {phase === 'completed' ? <CheckCircle2 className="w-12 h-12" /> : <XCircle className="w-12 h-12" />}
                 </div>
-              </div>
-              <div className="space-y-3">
-                <h1 className="text-3xl font-black text-gray-900 tracking-tight">
-                  {phase === 'completed' ? 'Emergency Resolved' : 'Service Cancelled'}
-                </h1>
-                <p className="text-gray-500 font-medium leading-relaxed">
+              </motion.div>
+              
+              <div className="space-y-4">
+                <motion.h1 
+                  variants={{ initial: { y: 20, opacity: 0 }, animate: { y: 0, opacity: 1 } }}
+                  className="text-4xl font-black text-gray-900 tracking-tight leading-tight whitespace-pre-line"
+                >
+                  {phase === 'completed' ? 'Incident\nResolved' : 'Request\nCancelled'}
+                </motion.h1>
+                <motion.p 
+                  variants={{ initial: { y: 20, opacity: 0 }, animate: { y: 0, opacity: 1 } }}
+                  className="text-gray-500 font-medium leading-relaxed px-4"
+                >
                   {phase === 'completed' 
-                    ? 'The emergency response team has successfully resolved the incident. Thank you for using Waasta.'
-                    : 'This emergency request has been cancelled or discarded by the dispatch center. If this is a mistake, please file a new report.'}
-                </p>
+                    ? 'Thank you for choosing Waasta. Your emergency has been marked as completed by the responders.'
+                    : 'Your emergency request has been discarded by the dispatch center. If this was an error, please start a new session.'}
+                </motion.p>
               </div>
-              <button
-                onClick={() => {
-                  store.reset();
-                  setPhase('pre-dispatch');
-                }}
-                className="w-full py-4 bg-gray-900 text-white font-bold rounded-2xl hover:bg-black transition-colors"
+
+              <motion.div
+                variants={{ initial: { y: 20, opacity: 0 }, animate: { y: 0, opacity: 1 } }}
+                className="pt-6 px-4"
               >
-                Create New Report
-              </button>
+                <motion.button 
+                  variants={{ initial: { y: 20, opacity: 0 }, animate: { y: 0, opacity: 1 } }}
+                  onClick={() => {
+                    store.reset();
+                    setPhase('pre-dispatch');
+                  }}
+                  className="w-full py-4 bg-gray-900 text-white font-bold rounded-2xl hover:bg-black transition-all active:scale-[0.98] shadow-lg shadow-gray-200"
+                >
+                  Return to Home
+                </motion.button>
+                {phase === 'cancelled' && (
+                  <motion.a
+                    variants={{ initial: { y: 20, opacity: 0 }, animate: { y: 0, opacity: 1 } }}
+                    href="tel:1122"
+                    className="mt-4 w-full py-3 border-2 border-red-200 text-red-600 font-bold rounded-2xl flex items-center justify-center gap-2"
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    Call 1122 Directly
+                  </motion.a>
+                )}
+              </motion.div>
             </div>
           </motion.div>
         ) : phase === 'pre-dispatch' ? (
