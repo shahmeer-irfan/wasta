@@ -606,11 +606,18 @@ export default function InstitutionDashboard() {
               </div>
             )}
 
-            {/* Active dispatch — only show the MOST RECENT accepted/dispatched incident */}
+            {/* Active dispatch — prioritize selected incident, fallback to most recent */}
             {(() => {
-              const dispatchable = activeIncidents.find(i =>
-                ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(i.status)
-              );
+              const selectedInc = selectedIncident 
+                ? activeIncidents.find(i => i.id === selectedIncident) 
+                : null;
+                
+              const dispatchable = (selectedInc && ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(selectedInc.status))
+                ? selectedInc
+                : activeIncidents.find(i =>
+                    ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(i.status)
+                  );
+                  
               if (!dispatchable) return null;
 
               const isDispatched = ['dispatched', 'en_route', 'on_scene'].includes(dispatchable.status);
