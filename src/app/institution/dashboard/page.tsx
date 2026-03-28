@@ -324,7 +324,7 @@ export default function InstitutionDashboard() {
       lng: r.lng,
       iconType: (r.status === 'on_scene' ? 'arrived' 
         : (['dispatched', 'en_route'].includes(r.status) ? 'deployed' 
-        : (r.status === 'available' ? 'active' : 'default'))) as any,
+        : (r.status === 'available' ? 'active' : 'active'))) as 'arrived' | 'deployed' | 'active',
       iconName: 'ambulance' as const,
       popup: `${r.call_sign} — ${r.status}`,
     })),

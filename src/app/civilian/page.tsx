@@ -495,7 +495,7 @@ export default function CivilianPage() {
                 <WaastaMap
                   center={userLocation ?? undefined}
                   zoom={15}
-                  markers={userLocation ? [{ lat: userLocation.lat, lng: userLocation.lng, iconType: 'active' as any }] : []}
+                  markers={userLocation ? [{ lat: userLocation.lat, lng: userLocation.lng, iconType: 'active' as const }] : []}
                   className="h-full w-full"
                 />
               </div>
