@@ -121,9 +121,11 @@ export default function InstitutionDashboard() {
         .order('sent_at', { ascending: false })
         .limit(1);
 
+      console.log('[DASHBOARD] Pending broadcasts:', pendingBroadcasts?.length ?? 0);
       if (pendingBroadcasts?.length) {
         const b = pendingBroadcasts[0];
         const inc = (b as Record<string, unknown>).incidents;
+        console.log('[DASHBOARD] Opening popup for pending broadcast:', b.id?.substring(0,8), 'incident:', inc ? 'found' : 'NULL');
         if (inc) {
           store.setActiveBroadcast({
             ...b,
@@ -418,8 +420,8 @@ export default function InstitutionDashboard() {
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     onClick={async () => {
                       setSelectedIncident(isSelected ? null : incident.id);
-                      // If broadcasting, open accept modal on click
-                      if (incident.status === 'broadcasting' && !store.activeBroadcast) {
+                      // Open accept modal for any incident with a pending broadcast
+                      if (!store.activeBroadcast && ['broadcasting', 'intake', 'geocoded'].includes(incident.status)) {
                         const { data: bc } = await supabase
                           .from('incident_broadcasts')
                           .select('*')
@@ -605,11 +607,18 @@ export default function InstitutionDashboard() {
               </div>
             )}
 
-            {/* Active dispatch — only show the MOST RECENT accepted/dispatched incident */}
+            {/* Active dispatch — prioritize selected incident, fallback to most recent */}
             {(() => {
-              const dispatchable = activeIncidents.find(i =>
-                ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(i.status)
-              );
+              const selectedInc = selectedIncident 
+                ? activeIncidents.find(i => i.id === selectedIncident) 
+                : null;
+                
+              const dispatchable = (selectedInc && ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(selectedInc.status))
+                ? selectedInc
+                : activeIncidents.find(i =>
+                    ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(i.status)
+                  );
+                  
               if (!dispatchable) return null;
 
               const isDispatched = ['dispatched', 'en_route', 'on_scene'].includes(dispatchable.status);
@@ -641,7 +650,7 @@ export default function InstitutionDashboard() {
                     </span>
                   </div>
 
-                  {/* Voice chat — only for the active incident */}
+                  {/* Voice chat — auto-connects when accepted */}
                   <VoiceChat
                     incidentId={dispatchable.id}
                     role="institution"

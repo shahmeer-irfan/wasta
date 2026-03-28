@@ -102,14 +102,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE resources;
 INSERT INTO institutes (name, type, zone, lat, lng) VALUES
   ('Edhi Foundation - Gulshan', 'ambulance', 'Gulshan', 24.9210, 67.0935);
 
--- 3 ambulances near Edhi HQ
+-- 3 ambulances AT Edhi station (exact same coordinates)
 INSERT INTO resources (institute_id, call_sign, type, lat, lng, status)
-SELECT
-  i.id,
-  'EDH-' || LPAD(n::text, 2, '0'),
-  'ambulance',
-  i.lat + (random() - 0.5) * 0.008,
-  i.lng + (random() - 0.5) * 0.008,
-  'available'
-FROM institutes i, generate_series(1, 3) AS n
-WHERE i.name LIKE 'Edhi%';
+SELECT i.id, 'EDH-01', 'ambulance', i.lat, i.lng, 'available' FROM institutes i WHERE i.name LIKE 'Edhi%';
+INSERT INTO resources (institute_id, call_sign, type, lat, lng, status)
+SELECT i.id, 'EDH-02', 'ambulance', i.lat, i.lng, 'available' FROM institutes i WHERE i.name LIKE 'Edhi%';
+INSERT INTO resources (institute_id, call_sign, type, lat, lng, status)
+SELECT i.id, 'EDH-03', 'ambulance', i.lat, i.lng, 'available' FROM institutes i WHERE i.name LIKE 'Edhi%';

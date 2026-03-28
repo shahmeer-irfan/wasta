@@ -10,6 +10,7 @@ import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
 import EmergencyCall from '@/components/civilian/EmergencyCall';
+import VoiceChat from '@/components/shared/VoiceChat';
 import { useWaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
@@ -704,6 +705,8 @@ export default function CivilianPage() {
                   lng: store.incident.lng,
                 } : null}
                 zoom={14}
+                routeWaypoints={store.incident?.route_waypoints}
+                routeProgressStep={store.incident?.route_progress_step}
               />
 
         {/* Top overlay */}
@@ -741,6 +744,18 @@ export default function CivilianPage() {
                 )}
               </div>
             </div>
+
+      {/* Voice chat — auto-connects when institution accepts */}
+      {store.incidentId && store.incident?.accepted_by && (
+        <div className="px-4 py-2 border-t border-orange-200/30 bg-white/95 backdrop-blur-sm">
+          <VoiceChat
+            incidentId={store.incidentId}
+            role="civilian"
+            peerLabel={institute?.name || 'Rescue Team'}
+            autoConnect
+          />
+        </div>
+      )}
 
       {/* Bottom tracking sheet */}
       {store.incident && (
