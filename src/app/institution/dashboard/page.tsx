@@ -532,18 +532,17 @@ export default function InstitutionDashboard() {
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
-                            console.log('[DASHBOARD] Resolving incident', incident.id);
-                            await supabase.from('incidents').update({
-                              status: 'resolved',
-                              updated_at: new Date().toISOString(),
-                            }).eq('id', incident.id);
-                            // Free up the resource
+                            console.log('[DASHBOARD] Discarding incident', incident.id);
+                            // Free up the resource first
                             if (incident.assigned_resource) {
                               await supabase.from('resources').update({
                                 status: 'available',
                                 updated_at: new Date().toISOString(),
                               }).eq('id', incident.assigned_resource);
                             }
+                            // Delete from broadcasts and incidents tables completely
+                            await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
+                            await supabase.from('incidents').delete().eq('id', incident.id);
                             // Remove from local state
                             setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
                           }}
