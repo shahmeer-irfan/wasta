@@ -1,9 +1,9 @@
 // ============================================================
 // WAASTA — WebRTC Voice Channel with Supabase Signaling
-// Browser-to-browser voice chat (like InDrive in-app call)
 // ============================================================
 
 import { supabase } from '@/lib/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
@@ -24,173 +24,179 @@ export interface VoiceChannelCallbacks {
 export class VoiceChannel {
   private pc: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
+  private channel: RealtimeChannel | null = null;
   private channelName: string;
   private role: VoiceRole;
-  private callbacks: VoiceChannelCallbacks;
-  private subscribed = false;
+  private cb: VoiceChannelCallbacks;
+  private started = false;
+  private pendingCandidates: RTCIceCandidateInit[] = [];
+  private remoteDescSet = false;
 
-  constructor(
-    incidentId: string,
-    role: VoiceRole,
-    callbacks: VoiceChannelCallbacks
-  ) {
+  constructor(incidentId: string, role: VoiceRole, cb: VoiceChannelCallbacks) {
     this.channelName = `voice-${incidentId}`;
     this.role = role;
-    this.callbacks = callbacks;
+    this.cb = cb;
   }
 
   async start(): Promise<void> {
+    if (this.started) return;
+    this.started = true;
+    const t = `[VOICE:${this.role}]`;
+
     try {
-      // Get microphone
+      // 1. Mic
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false,
       });
+      console.log(`${t} Mic OK`);
 
-      // Create peer connection
+      // 2. Peer connection
       this.pc = new RTCPeerConnection(ICE_SERVERS);
-
-      // Add local audio tracks
       for (const track of this.localStream.getAudioTracks()) {
         this.pc.addTrack(track, this.localStream);
       }
 
-      // Handle remote stream
-      this.pc.ontrack = (event) => {
-        if (event.streams[0]) {
-          this.callbacks.onRemoteStream(event.streams[0]);
-        }
+      this.pc.ontrack = (e) => {
+        console.log(`${t} Got remote audio`);
+        if (e.streams[0]) this.cb.onRemoteStream(e.streams[0]);
       };
 
-      // Handle ICE candidates — send via Supabase
-      this.pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          this.sendSignal('ice-candidate', {
-            candidate: event.candidate.toJSON(),
-            from: this.role,
-          });
-        }
+      this.pc.onicecandidate = (e) => {
+        if (e.candidate) this.send('ice-candidate', { candidate: e.candidate.toJSON() });
       };
 
-      // Connection state
       this.pc.onconnectionstatechange = () => {
-        const state = this.pc?.connectionState;
-        if (state === 'connected') {
-          this.callbacks.onConnected();
-        } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          this.callbacks.onDisconnected();
-        }
+        const s = this.pc?.connectionState;
+        console.log(`${t} State: ${s}`);
+        if (s === 'connected') this.cb.onConnected();
+        if (s === 'disconnected' || s === 'failed' || s === 'closed') this.cb.onDisconnected();
       };
 
-      // Subscribe to signaling channel
-      this.listenForSignals();
+      this.pc.oniceconnectionstatechange = () => {
+        console.log(`${t} ICE: ${this.pc?.iceConnectionState}`);
+      };
 
-      // Civilian creates the offer, institution waits
-      if (this.role === 'civilian') {
-        await this.createOffer();
-      }
-    } catch (err) {
-      this.callbacks.onError(
-        err instanceof Error ? err.message : 'Failed to start voice channel'
-      );
-    }
-  }
+      // 3. Subscribe to Supabase broadcast channel
+      this.channel = supabase.channel(this.channelName, {
+        config: { broadcast: { self: false, ack: true } },
+      });
 
-  private async createOffer(): Promise<void> {
-    if (!this.pc) return;
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
-    this.sendSignal('offer', {
-      sdp: offer,
-      from: this.role,
-    });
-  }
+      this.channel.on('broadcast', { event: 'webrtc' }, async ({ payload }) => {
+        if (!payload || payload.from === this.role) return;
+        console.log(`${t} Recv: ${payload.type}`);
 
-  private async handleOffer(sdp: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.pc) return;
-    await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    const answer = await this.pc.createAnswer();
-    await this.pc.setLocalDescription(answer);
-    this.sendSignal('answer', {
-      sdp: answer,
-      from: this.role,
-    });
-  }
+        try {
+          if (payload.type === 'offer' && this.pc) {
+            await this.pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            this.remoteDescSet = true;
+            await this.flushCandidates();
+            const answer = await this.pc.createAnswer();
+            await this.pc.setLocalDescription(answer);
+            this.send('answer', { sdp: { type: answer.type, sdp: answer.sdp } });
+            console.log(`${t} Answer sent`);
+          }
 
-  private async handleAnswer(sdp: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.pc) return;
-    await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-  }
+          if (payload.type === 'answer' && this.pc) {
+            if (this.pc.signalingState === 'have-local-offer') {
+              await this.pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+              this.remoteDescSet = true;
+              await this.flushCandidates();
+              console.log(`${t} Answer applied`);
+            }
+          }
 
-  private async handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
-    if (!this.pc) return;
-    try {
-      await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch {
-      // ICE candidate error — non-fatal
-    }
-  }
+          if (payload.type === 'ice-candidate') {
+            if (this.remoteDescSet && this.pc) {
+              await this.pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+            } else {
+              this.pendingCandidates.push(payload.candidate);
+            }
+          }
 
-  private listenForSignals(): void {
-    if (this.subscribed) return;
-    this.subscribed = true;
-
-    const channel = supabase.channel(this.channelName);
-
-    channel
-      .on('broadcast', { event: 'signal' }, (payload) => {
-        const data = payload.payload;
-        if (!data || data.from === this.role) return; // Ignore own signals
-
-        switch (data.type) {
-          case 'offer':
-            this.handleOffer(data.sdp);
-            break;
-          case 'answer':
-            this.handleAnswer(data.sdp);
-            break;
-          case 'ice-candidate':
-            this.handleIceCandidate(data.candidate);
-            break;
-          case 'hangup':
-            this.stop();
-            this.callbacks.onDisconnected();
-            break;
+          if (payload.type === 'hangup') {
+            this.cleanup();
+            this.cb.onDisconnected();
+          }
+        } catch (err) {
+          console.error(`${t} Signal error:`, err);
         }
-      })
-      .subscribe();
+      });
+
+      // Wait for subscription to be confirmed
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Channel subscribe timeout')), 10000);
+        this.channel!.subscribe((status) => {
+          console.log(`${t} Channel status: ${status}`);
+          if (status === 'SUBSCRIBED') {
+            clearTimeout(timeout);
+            resolve();
+          }
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            clearTimeout(timeout);
+            reject(new Error(`Channel ${status}`));
+          }
+        });
+      });
+
+      console.log(`${t} Channel ready`);
+
+      // 4. Civilian sends offer after delay (institution just waits)
+      if (this.role === 'civilian') {
+        // Send a ping first to verify channel works
+        this.send('ping', {});
+        await new Promise(r => setTimeout(r, 2500));
+
+        if (!this.pc) return;
+        console.log(`${t} Creating offer...`);
+        const offer = await this.pc.createOffer();
+        await this.pc.setLocalDescription(offer);
+        this.send('offer', { sdp: { type: offer.type, sdp: offer.sdp } });
+        console.log(`${t} Offer sent`);
+      }
+
+    } catch (err) {
+      console.error(`${t} Start failed:`, err);
+      this.cb.onError(err instanceof Error ? err.message : 'Voice channel failed');
+    }
   }
 
-  private sendSignal(type: string, data: Record<string, unknown>): void {
-    supabase.channel(this.channelName).send({
+  private async flushCandidates(): Promise<void> {
+    for (const c of this.pendingCandidates) {
+      try { await this.pc?.addIceCandidate(new RTCIceCandidate(c)); } catch { /* skip */ }
+    }
+    this.pendingCandidates = [];
+  }
+
+  private send(type: string, data: Record<string, unknown>): void {
+    if (!this.channel) return;
+    this.channel.send({
       type: 'broadcast',
-      event: 'signal',
-      payload: { type, ...data },
+      event: 'webrtc',
+      payload: { type, from: this.role, ...data },
+    }).then((status) => {
+      if (status !== 'ok') console.warn(`[VOICE:${this.role}] Send ${type} status: ${status}`);
     });
   }
 
   setMuted(muted: boolean): void {
-    if (this.localStream) {
-      for (const track of this.localStream.getAudioTracks()) {
-        track.enabled = !muted;
-      }
-    }
+    this.localStream?.getAudioTracks().forEach(t => { t.enabled = !muted; });
   }
 
-  stop(): void {
-    // Notify peer
-    this.sendSignal('hangup', { from: this.role });
-
-    // Cleanup
-    this.localStream?.getTracks().forEach((t) => t.stop());
+  private cleanup(): void {
+    this.localStream?.getTracks().forEach(t => t.stop());
     this.localStream = null;
     this.pc?.close();
     this.pc = null;
-    supabase.removeChannel(supabase.channel(this.channelName));
-    this.subscribed = false;
+    if (this.channel) { supabase.removeChannel(this.channel); this.channel = null; }
+    this.started = false;
+    this.remoteDescSet = false;
+    this.pendingCandidates = [];
+  }
+
+  stop(): void {
+    console.log(`[VOICE:${this.role}] Stop`);
+    try { this.send('hangup', {}); } catch { /* ok */ }
+    this.cleanup();
   }
 }

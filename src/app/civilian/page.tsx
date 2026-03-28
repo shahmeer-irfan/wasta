@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
-import { AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock, ChevronLeft, Zap } from 'lucide-react';
+import { AlertTriangle, Mic, Send, X, RefreshCw, MapPin, Clock, ChevronLeft, Zap } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import SOSButton from '@/components/civilian/SOSButton';
@@ -148,7 +148,8 @@ export default function CivilianPage() {
       setError(`Failed to connect: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
       store.setAgentStatus('idle');
     }
-  }, [store]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, userLocation?.lat, userLocation?.lng]);
 
   // ── Handle Voice Submit ───────────────────────────────────
   const handleVoiceSubmit = useCallback(() => {
@@ -178,6 +179,50 @@ export default function CivilianPage() {
   useEffect(() => {
     return () => { recognitionRef.current?.stop(); };
   }, []);
+
+  // ── Background poller: find incident while Vapi call is active ──
+  useEffect(() => {
+    // Only poll when call is active but we don't have an incident yet
+    if (store.incidentId || store.agentStatus === 'idle') return;
+
+    console.log('[CIVILIAN] Starting background incident poller');
+    const interval = setInterval(async () => {
+      if (store.incidentId) { clearInterval(interval); return; }
+
+      const { data: recent } = await supabase
+        .from('incidents')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (recent) {
+        const age = Date.now() - new Date(recent.created_at).getTime();
+        if (age < 180000) { // Created within last 3 min
+          console.log('[CIVILIAN] Poller found incident:', recent.id.substring(0, 8), 'status:', recent.status);
+          store.setIncidentId(recent.id);
+          store.setIncident(recent as Incident);
+
+          if (recent.status === 'broadcasting' || recent.status === 'geocoded') {
+            store.setAgentStatus('broadcasting');
+          }
+          if (recent.status === 'accepted') {
+            store.setAgentStatus('accepted');
+            setEndVapiCall(true);
+            setPhase('tracking');
+            if (recent.accepted_by) {
+              const { data: inst } = await supabase.from('institutes').select('*').eq('id', recent.accepted_by).single();
+              if (inst) setInstitute(inst as Institute);
+            }
+          }
+          clearInterval(interval);
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.agentStatus, store.incidentId]);
 
   // ── Subscribe to incident changes ─────────────────────────
   useEffect(() => {
@@ -297,12 +342,12 @@ export default function CivilianPage() {
   const canSubmitVoice = voiceTranscript.trim().length > 5;
 
   return (
-    <div className="min-h-screen w-screen bg-white overflow-y-auto overflow-x-hidden relative">
+    <div className="h-screen w-screen bg-white overflow-x-hidden relative" style={{ overflowY: phase === 'pre-dispatch' ? 'auto' : 'hidden' }}>
       <AnimatePresence mode="wait">
         {phase === 'pre-dispatch' ? (
           <motion.div
             key="pre-dispatch"
-            className="min-h-screen flex flex-col relative"
+            className="h-full flex flex-col relative overflow-y-auto"
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.4 }}
           >
@@ -343,96 +388,79 @@ export default function CivilianPage() {
               </AnimatePresence>
             </div>
 
-            {/* Main content area */}
-            <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 relative z-10">
+            {/* ── Main: Clean minimal layout ──────────────── */}
+            <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
 
-              {/* ── Hero: Map BG + SOS Button + Tagline ──────── */}
-              <div className="relative w-full overflow-hidden" style={{ height: 320 }}>
-                {/* Map background */}
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{
-                    opacity: 0.4,
-                    WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)',
-                    maskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)',
-                  }}
-                >
-                  <WaastaMap
-                    center={userLocation ?? undefined}
-                    zoom={14}
-                    markers={userLocation ? [{ lat: userLocation.lat, lng: userLocation.lng, iconType: 'institute' as const, popup: 'You' }] : []}
-                    className="h-full w-full"
-                  />
-                </div>
-                {/* SOS button centered */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <SOSButton
-                    onPress={() => {
-                      if (!isActive && VAPI_ASSISTANT_ID) {
-                        setTriggerVapiCall(true);
-                      }
-                    }}
-                    isActive={store.agentStatus !== 'idle'}
-                  />
-                </div>
-              </div>
-              <div className="text-center -mt-2 mb-4">
-                <h2 className="text-xl font-extrabold text-gray-900">Emergency? We&apos;re here.</h2>
-                <p className="text-base font-semibold text-orange-600 mt-1">مدد چاہیے؟ ہم یہاں ہیں</p>
-                <p className="text-xs text-gray-400 mt-2 max-w-[280px] mx-auto leading-relaxed">
-                  Tap SOS to speak with Waasta AI, or describe below.
-                </p>
-              </div>
-
-              {/* Status / Transcript stream */}
-              <div className="w-full max-w-sm">
-                <TranscriptStream
-                  transcript={store.transcript}
-                  agentStatus={store.agentStatus}
-                  landmark={store.incident?.landmark}
+              {/* Map background */}
+              <div className="absolute inset-0 pointer-events-none" style={{
+                opacity: 0.3,
+                WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
+                maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
+              }}>
+                <WaastaMap
+                  center={userLocation ?? undefined}
+                  zoom={14}
+                  markers={userLocation ? [{ lat: userLocation.lat, lng: userLocation.lng, iconType: 'institute' as const }] : []}
+                  className="h-full w-full"
                 />
               </div>
 
-              {/* Error message */}
+              {/* SOS Button — main action */}
+              <div className="relative z-10 flex flex-col items-center">
+                <SOSButton
+                  onPress={() => {
+                    if (!isActive && VAPI_ASSISTANT_ID) {
+                      setTriggerVapiCall(true);
+                    }
+                  }}
+                  isActive={store.agentStatus !== 'idle'}
+                />
+                <p className="text-xs text-gray-400 mt-4">
+                  {store.agentStatus === 'idle' ? 'Tap to call Waasta AI' : ''}
+                </p>
+              </div>
+
+              {/* Status / Transcript — shows when active */}
+              {isActive && (
+                <div className="w-full max-w-sm mt-4 relative z-10">
+                  <TranscriptStream
+                    transcript={store.transcript}
+                    agentStatus={store.agentStatus}
+                    landmark={store.incident?.landmark}
+                  />
+                </div>
+              )}
+
+              {/* Error */}
               <AnimatePresence>
                 {error && (
                   <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="w-full max-w-sm flex items-start gap-2 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/20"
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="w-full max-w-sm mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 relative z-10"
                   >
-                    <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
-                    <span className="text-sm text-orange-700">{error}</span>
-                    <button onClick={() => setError(null)} className="ml-auto text-zinc-500 hover:text-zinc-400">
-                      <X className="w-4 h-4" />
-                    </button>
+                    <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                    <span className="text-xs text-red-700 flex-1">{error}</span>
+                    <button onClick={() => setError(null)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Broadcasting indicator */}
+              {/* Broadcasting */}
               <AnimatePresence>
                 {store.agentStatus === 'broadcasting' && (
                   <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-600/10 border border-amber-600/20"
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 border border-amber-200 mt-3 relative z-10"
                   >
-                    <motion.div
-                      className="w-2 h-2 rounded-full bg-amber-500"
-                      animate={{ opacity: [1, 0.3, 1] }}
-                      transition={{ duration: 1, repeat: Infinity }}
-                    />
-                    <span className="text-sm text-amber-400">Broadcasting to nearest responders...</span>
+                    <motion.div className="w-2 h-2 rounded-full bg-amber-500" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} />
+                    <span className="text-xs text-amber-700 font-medium">Broadcasting to responders...</span>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Vapi AI Voice Call — ALWAYS mounted when assistant configured */}
+              {/* Vapi EmergencyCall — hidden but always mounted */}
               {VAPI_ASSISTANT_ID && (
-                <div className="w-full max-w-sm">
+                <div className="w-full max-w-sm mt-3 relative z-10">
                   <EmergencyCall
                     assistantId={VAPI_ASSISTANT_ID}
                     forceEnd={endVapiCall}
@@ -443,35 +471,24 @@ export default function CivilianPage() {
                     }}
                     onCallStart={() => store.setAgentStatus('listening')}
                     onCallEnd={async () => {
-                      // AI call ended — find the incident if we don't have it yet
                       if (!store.incidentId) {
                         store.setAgentStatus('analyzing');
-                        // Poll for latest incident created in last 60s
                         for (let i = 0; i < 5; i++) {
                           await new Promise((r) => setTimeout(r, 1000));
                           const { data: recent } = await supabase
-                            .from('incidents')
-                            .select('*')
-                            .order('created_at', { ascending: false })
-                            .limit(1)
-                            .single();
+                            .from('incidents').select('*')
+                            .order('created_at', { ascending: false }).limit(1).single();
                           if (recent) {
                             const age = Date.now() - new Date(recent.created_at).getTime();
-                            if (age < 120000) { // Created within last 2 min
+                            if (age < 120000) {
                               store.setIncidentId(recent.id);
                               store.setIncident(recent as Incident);
-                              store.setAgentStatus(
-                                recent.status === 'accepted' ? 'accepted' : 'broadcasting'
-                              );
+                              store.setAgentStatus(recent.status === 'accepted' ? 'accepted' : 'broadcasting');
                               if (recent.status === 'accepted') {
                                 setEndVapiCall(true);
                                 setPhase('tracking');
                                 if (recent.accepted_by) {
-                                  const { data: inst } = await supabase
-                                    .from('institutes')
-                                    .select('*')
-                                    .eq('id', recent.accepted_by)
-                                    .single();
+                                  const { data: inst } = await supabase.from('institutes').select('*').eq('id', recent.accepted_by).single();
                                   if (inst) setInstitute(inst as Institute);
                                 }
                               }
@@ -479,29 +496,17 @@ export default function CivilianPage() {
                             }
                           }
                         }
-                        // If still nothing, reset
-                        if (!store.incidentId) {
-                          store.setAgentStatus('idle');
-                        }
+                        if (!store.incidentId) store.setAgentStatus('idle');
                       }
                     }}
                     onIncidentReported={async (data) => {
-                      // Vapi webhook creates incident server-side.
-                      // Update UI and poll for the newly-created incident.
                       store.setAgentStatus('analyzing');
-                      store.setTranscript(
-                        `${data.incident_type} near ${data.landmark} — dispatching...`
-                      );
-
-                      // Poll Supabase for the new incident (webhook creates it within ~1-2s)
+                      store.setTranscript(`${data.incident_type} near ${data.landmark}`);
                       for (let attempt = 0; attempt < 8; attempt++) {
                         await new Promise((r) => setTimeout(r, 1500));
                         const { data: recent } = await supabase
-                          .from('incidents')
-                          .select('*')
-                          .order('created_at', { ascending: false })
-                          .limit(1)
-                          .single();
+                          .from('incidents').select('*')
+                          .order('created_at', { ascending: false }).limit(1).single();
                         if (recent && !store.incidentId) {
                           store.setIncidentId(recent.id);
                           store.setIncident(recent as Incident);
@@ -514,146 +519,83 @@ export default function CivilianPage() {
                 </div>
               )}
 
-              {/* Input options — show when idle */}
+              {/* Two small buttons: Voice Record + Text Input */}
               {!isActive && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-sm space-y-3"
-                >
-                  <p className="text-xs text-zinc-500 text-center tracking-wide uppercase">
-                    {VAPI_ASSISTANT_ID ? 'Or describe manually:' : 'Describe the emergency:'}
-                  </p>
+                <div className="flex items-center gap-3 mt-6 relative z-10">
+                  {/* Voice record button */}
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all ${
+                      isRecording
+                        ? 'bg-red-500 text-white shadow-lg'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-orange-300 hover:text-orange-600 shadow-sm'
+                    }`}
+                  >
+                    <Mic className="w-3.5 h-3.5" />
+                    {isRecording ? 'Stop Recording' : 'Voice'}
+                  </motion.button>
 
-                  {/* ── VOICE INPUT ─────────────────────────── */}
-                  <div className="rounded-2xl bg-orange-50/80 border border-orange-200/50 overflow-hidden">
-                    <div className="flex items-center gap-3 px-4 py-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                        isRecording ? 'bg-orange-500/20 border border-orange-500/30' : 'bg-orange-100'
-                      }`}>
-                        {isRecording
-                          ? <motion.div animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
-                              <Mic className="w-4 h-4 text-orange-600" />
-                            </motion.div>
-                          : <Mic className="w-4 h-4 text-zinc-600" />
-                        }
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-medium text-zinc-400">Voice Input</p>
-                        <p className="text-[10px] text-zinc-600">
-                          {isRecording
-                            ? 'Listening... speak now'
-                            : voiceTranscript
-                            ? `"${voiceTranscript.slice(0, 40)}..."`
-                            : 'Tap to record your emergency'}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {voiceTranscript && !isRecording && (
-                          <motion.button
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            onClick={handleVoiceSubmit}
-                            disabled={!canSubmitVoice}
-                            className="w-8 h-8 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 flex items-center justify-center disabled:opacity-40 transition-all shadow-sm"
-                          >
-                            <Send className="w-3.5 h-3.5 text-white" />
-                          </motion.button>
-                        )}
-                        {voiceTranscript && (
-                          <button
-                            onClick={() => { setVoiceTranscript(''); store.setTranscript(''); }}
-                            className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center text-zinc-500 hover:text-zinc-400 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                        <motion.button
-                          whileTap={{ scale: 0.9 }}
-                          onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                            isRecording
-                              ? 'bg-orange-500/20 text-orange-600 border border-orange-500/30 hover:bg-orange-500/30'
-                              : 'bg-orange-100 text-zinc-400 hover:bg-orange-200'
-                          }`}
-                        >
-                          {isRecording ? 'Stop' : 'Record'}
-                        </motion.button>
+                  {/* Text input button — opens textarea */}
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => textAreaRef.current?.focus()}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white border border-gray-200 text-gray-600 hover:border-orange-300 hover:text-orange-600 text-xs font-semibold shadow-sm transition-all"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Text
+                  </motion.button>
+                </div>
+              )}
+
+              {/* Voice transcript preview */}
+              <AnimatePresence>
+                {voiceTranscript && !isActive && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="w-full max-w-sm mt-3 relative z-10"
+                  >
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-start gap-2">
+                      <p className="text-xs text-green-800 flex-1 leading-relaxed">&ldquo;{voiceTranscript}&rdquo;</p>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={handleVoiceSubmit} disabled={!canSubmitVoice}
+                          className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center disabled:opacity-40">
+                          <Send className="w-3 h-3 text-white" />
+                        </button>
+                        <button onClick={() => { setVoiceTranscript(''); store.setTranscript(''); }}
+                          className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                          <X className="w-3 h-3 text-gray-500" />
+                        </button>
                       </div>
                     </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                    {/* Voice transcript preview */}
-                    <AnimatePresence>
-                      {voiceTranscript && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="px-4 pb-3"
-                        >
-                          <div className="bg-orange-100/60 rounded-lg p-3 border border-orange-200/40">
-                            <p className="text-xs text-zinc-400 leading-relaxed font-mono">
-                              {voiceTranscript}
-                              {isRecording && (
-                                <motion.span
-                                  className="inline-block w-1 h-3 bg-orange-500 ml-1 -mb-0.5"
-                                  animate={{ opacity: [1, 0] }}
-                                  transition={{ duration: 0.6, repeat: Infinity }}
-                                />
-                              )}
-                            </p>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  {/* Divider */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-orange-100" />
-                    <span className="text-[10px] text-zinc-600 uppercase tracking-wider">or</span>
-                    <div className="flex-1 h-px bg-orange-100" />
-                  </div>
-
-                  {/* ── TEXT INPUT ──────────────────────────── */}
-                  <div className="rounded-2xl bg-orange-50/80 border border-orange-200/50 overflow-hidden">
-                    <div className="px-4 pt-3 pb-2">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Phone className="w-3.5 h-3.5 text-zinc-500" />
-                        <p className="text-xs font-medium text-zinc-400">Type Emergency Details</p>
-                      </div>
-                      <textarea
-                        ref={textAreaRef}
-                        value={textInput}
-                        onChange={(e) => setTextInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && e.ctrlKey && canSubmitText) {
-                            handleTextSubmit();
-                          }
-                        }}
-                        placeholder="Kya hua, kahan hua, kitne log hain... (What happened, where, how many people)"
-                        rows={4}
-                        className="w-full bg-transparent text-sm text-gray-800 placeholder-gray-400 resize-none outline-none leading-relaxed"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between px-4 pb-3">
-                      <span className="text-[10px] text-zinc-600">
-                        {textInput.length < 10
-                          ? `${10 - textInput.length} more chars needed`
-                          : `${textInput.length} chars`}
+              {/* Text input — compact, shows below buttons */}
+              {!isActive && (
+                <div className="w-full max-w-sm mt-3 relative z-10">
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                    <textarea
+                      ref={textAreaRef}
+                      value={textInput}
+                      onChange={(e) => setTextInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey && canSubmitText) handleTextSubmit(); }}
+                      placeholder="Kya hua, kahan hua... (Ctrl+Enter to send)"
+                      rows={2}
+                      className="w-full px-4 pt-3 pb-1 text-sm text-gray-800 placeholder-gray-400 resize-none outline-none bg-transparent"
+                    />
+                    <div className="flex items-center justify-between px-4 pb-2.5">
+                      <span className="text-[10px] text-gray-400">
+                        {textInput.length < 10 ? `${10 - textInput.length} more` : `${textInput.length} chars`}
                       </span>
-                      <motion.button
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleTextSubmit}
-                        disabled={!canSubmitText}
-                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all shadow-sm"
+                      <motion.button whileTap={{ scale: 0.95 }} onClick={handleTextSubmit} disabled={!canSubmitText}
+                        className="px-3.5 py-1 rounded-full bg-orange-500 text-white text-[11px] font-bold disabled:opacity-30 transition-opacity"
                       >
-                        <Send className="w-3 h-3" />
-                        Send Emergency
+                        Send
                       </motion.button>
                     </div>
                   </div>
-                </motion.div>
+                </div>
               )}
             </div>
 
