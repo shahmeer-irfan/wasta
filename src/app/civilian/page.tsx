@@ -194,7 +194,7 @@ export default function CivilianPage() {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (recent) {
         const age = Date.now() - new Date(recent.created_at).getTime();
@@ -567,47 +567,13 @@ export default function CivilianPage() {
                     onCallEnd={async () => {
                       if (!store.incidentId) {
                         store.setAgentStatus('analyzing');
-                        for (let i = 0; i < 5; i++) {
-                          await new Promise((r) => setTimeout(r, 1000));
-                          const { data: recent } = await supabase
-                            .from('incidents').select('*')
-                            .order('created_at', { ascending: false }).limit(1).single();
-                          if (recent) {
-                            const age = Date.now() - new Date(recent.created_at).getTime();
-                            if (age < 120000) {
-                              store.setIncidentId(recent.id);
-                              store.setIncident(recent as Incident);
-                              store.setAgentStatus(recent.status === 'accepted' ? 'accepted' : 'broadcasting');
-                              if (recent.status === 'accepted') {
-                                setEndVapiCall(true);
-                                setPhase('tracking');
-                                if (recent.accepted_by) {
-                                  const { data: inst } = await supabase.from('institutes').select('*').eq('id', recent.accepted_by).single();
-                                  if (inst) setInstitute(inst as Institute);
-                                }
-                              }
-                              break;
-                            }
-                          }
-                        }
-                        if (!store.incidentId) store.setAgentStatus('idle');
+                        // Background poller in useEffect (L184) will handle the rest
                       }
                     }}
                     onIncidentReported={async (data) => {
                       store.setAgentStatus('analyzing');
                       store.setTranscript(`${data.incident_type} near ${data.landmark}`);
-                      for (let attempt = 0; attempt < 8; attempt++) {
-                        await new Promise((r) => setTimeout(r, 1500));
-                        const { data: recent } = await supabase
-                          .from('incidents').select('*')
-                          .order('created_at', { ascending: false }).limit(1).single();
-                        if (recent && !store.incidentId) {
-                          store.setIncidentId(recent.id);
-                          store.setIncident(recent as Incident);
-                          store.setAgentStatus('broadcasting');
-                          break;
-                        }
-                      }
+                      // Background poller in useEffect (L184) will handle the rest
                     }}
                   />
                 </div>
