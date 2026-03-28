@@ -70,7 +70,9 @@ export class VoiceChannel {
         const s = this.pc?.connectionState;
         console.log(`${t} State: ${s}`);
         if (s === 'connected') this.cb.onConnected();
-        if (s === 'disconnected' || s === 'failed' || s === 'closed') this.cb.onDisconnected();
+        // Only treat 'failed' and 'closed' as real disconnect
+        // 'disconnected' is temporary (ICE renegotiation) — ignore it
+        if (s === 'failed' || s === 'closed') this.cb.onDisconnected();
       };
 
       this.pc.oniceconnectionstatechange = () => {
