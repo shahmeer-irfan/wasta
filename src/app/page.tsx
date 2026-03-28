@@ -21,7 +21,7 @@ export default function Home() {
             viewBox="0 0 800 160"
             preserveAspectRatio="none"
             className="absolute w-full"
-            style={{ top: `${yFrac * 100}%`, height: 120, opacity: rowIdx === 1 ? 0.22 : 0.10 }}
+            style={{ top: `${yFrac * 100}%`, height: 120, opacity: rowIdx === 1 ? 0.35 : 0.15 }}
           >
             {/* Static faint baseline */}
             <path
@@ -51,35 +51,6 @@ export default function Home() {
             />
           </svg>
         ))}
-
-        {/* Outer radial glow pulse centered on screen */}
-        <motion.div
-          className="absolute rounded-full"
-          style={{
-            width: 220,
-            height: 220,
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'radial-gradient(circle, rgba(251,146,60,0.18) 0%, transparent 70%)',
-          }}
-          animate={{ scale: [1, 1.6, 1], opacity: [0.5, 0, 0.5] }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        {/* Inner tighter glow */}
-        <motion.div
-          className="absolute rounded-full"
-          style={{
-            width: 100,
-            height: 100,
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'radial-gradient(circle, rgba(249,115,22,0.22) 0%, transparent 70%)',
-          }}
-          animate={{ scale: [1, 1.9, 1], opacity: [0.8, 0, 0.8] }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut', delay: 0.15 }}
-        />
       </div>
 
       {/* Logo */}
@@ -111,11 +82,11 @@ export default function Home() {
           transition={{ delay: 0.2 }}
         >
           <Link href="/civilian" className="block">
-            <div className="group bg-white/80 backdrop-blur-sm border border-orange-200 rounded-2xl p-5 hover:bg-orange-50 hover:border-orange-500/30 transition-all cursor-pointer">
+            <div className="group bg-white border-[1.5px] border-orange-200 shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl p-5 hover:border-orange-500 hover:shadow-[0_8px_30px_rgba(249,115,22,0.15)] transition-all cursor-pointer">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center">
-                    <Phone className="w-6 h-6 text-orange-500" />
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-400 to-orange-500 flex items-center justify-center">
+                    <Phone className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <div className="font-semibold text-zinc-900">Civilian SOS</div>
@@ -124,7 +95,9 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-                <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-orange-500 transition-colors" />
+                <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center group-hover:bg-orange-100 transition-colors">
+                  <ArrowRight className="w-4 h-4 text-orange-500" />
+                </div>
               </div>
             </div>
           </Link>
@@ -136,11 +109,11 @@ export default function Home() {
           transition={{ delay: 0.35 }}
         >
           <Link href="/institution/dashboard" className="block">
-            <div className="group bg-white/80 backdrop-blur-sm border border-orange-200 rounded-2xl p-5 hover:bg-orange-50 hover:border-blue-600/30 transition-all cursor-pointer">
+            <div className="group bg-white border-[1.5px] border-orange-300 shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl p-5 hover:border-orange-600 hover:shadow-[0_8px_30px_rgba(234,88,12,0.15)] transition-all cursor-pointer">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-blue-600/10 flex items-center justify-center">
-                    <Building2 className="w-6 h-6 text-blue-500" />
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-600 to-orange-700 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <div className="font-semibold text-zinc-900">Institution War Room</div>
@@ -149,7 +122,9 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-                <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-blue-500 transition-colors" />
+                <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center group-hover:bg-orange-200 transition-colors">
+                  <ArrowRight className="w-4 h-4 text-orange-600" />
+                </div>
               </div>
             </div>
           </Link>
