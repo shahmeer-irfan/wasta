@@ -1,5 +1,5 @@
 // ============================================================
-// GUARDIAN — Simulation Engine
+// VAASTA — Simulation Engine
 // Smooth LERP movement for ambulance icons on map
 // ============================================================
 

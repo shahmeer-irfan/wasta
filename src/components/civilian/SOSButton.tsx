@@ -14,13 +14,13 @@ export default function SOSButton({ onPress, isActive }: SOSButtonProps) {
       {!isActive && (
         <>
           <motion.div
-            className="absolute rounded-full border-2 border-red-600/30"
+            className="absolute rounded-full border-2 border-orange-500/30"
             style={{ width: 220, height: 220 }}
             animate={{ scale: [1, 2.2], opacity: [0.5, 0] }}
             transition={{ duration: 2.5, repeat: Infinity, ease: 'easeOut' }}
           />
           <motion.div
-            className="absolute rounded-full border-2 border-red-600/20"
+            className="absolute rounded-full border-2 border-orange-500/20"
             style={{ width: 220, height: 220 }}
             animate={{ scale: [1, 2.2], opacity: [0.4, 0] }}
             transition={{ duration: 2.5, repeat: Infinity, ease: 'easeOut', delay: 0.8 }}
@@ -32,13 +32,13 @@ export default function SOSButton({ onPress, isActive }: SOSButtonProps) {
       {isActive && (
         <>
           <motion.div
-            className="absolute rounded-full bg-red-600/10"
+            className="absolute rounded-full bg-orange-500/10"
             style={{ width: 280, height: 280 }}
             animate={{ scale: [1, 1.3], opacity: [0.3, 0] }}
             transition={{ duration: 1.5, repeat: Infinity, ease: 'easeOut' }}
           />
           <motion.div
-            className="absolute rounded-full bg-red-600/15"
+            className="absolute rounded-full bg-orange-500/15"
             style={{ width: 220, height: 220 }}
             animate={{ scale: [0.95, 1.1, 0.95], opacity: [0.6, 1, 0.6] }}
             transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
@@ -49,10 +49,10 @@ export default function SOSButton({ onPress, isActive }: SOSButtonProps) {
       {/* Main button */}
       <motion.button
         onClick={onPress}
-        className={`relative z-10 rounded-full flex items-center justify-center font-bold text-white transition-colors ${
+        className={`relative z-10 rounded-full flex items-center justify-center font-bold text-white transition-all ${
           isActive
-            ? 'bg-red-700 glow-red w-44 h-44'
-            : 'bg-red-600 hover:bg-red-500 w-40 h-40'
+            ? 'bg-red-700 glow-orange w-44 h-44'
+            : 'bg-gradient-to-br from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 w-40 h-40 shadow-lg'
         }`}
         whileTap={{ scale: 0.92 }}
         animate={isActive ? { scale: [1, 1.05, 1] } : {}}

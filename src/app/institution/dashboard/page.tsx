@@ -13,15 +13,15 @@ import BroadcastModal from '@/components/institution/BroadcastModal';
 import { useInstitutionStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '@/lib/constants';
-import type { MapMarker } from '@/components/maps/GuardianMap';
+import type { MapMarker } from '@/components/maps/VaastaMap';
 import type { Incident, IncidentBroadcast, Institute, Resource } from '@/types';
 
-const GuardianMap = dynamic(() => import('@/components/maps/GuardianMap'), {
+const VaastaMap = dynamic(() => import('@/components/maps/VaastaMap'), {
   ssr: false,
-  loading: () => <div className="h-full w-full bg-zinc-900 animate-pulse" />,
+  loading: () => <div className="h-full w-full bg-orange-50 animate-pulse" />,
 });
 
-const DEMO_INSTITUTE_ID_KEY = 'guardian_institute_id';
+const DEMO_INSTITUTE_ID_KEY = 'vaasta_institute_id';
 
 // Icon map for incident types
 const INCIDENT_ICONS: Record<string, React.ReactNode> = {
@@ -39,8 +39,8 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   broadcasting: { label: 'Alerting',   cls: 'text-amber-400 border-amber-600/30 bg-amber-600/10' },
   accepted:     { label: 'Accepted',   cls: 'text-emerald-400 border-emerald-600/30 bg-emerald-600/10' },
   dispatched:   { label: 'Dispatched', cls: 'text-green-400 border-green-600/30 bg-green-600/10' },
-  resolved:     { label: 'Resolved',   cls: 'text-zinc-400 border-zinc-600/30 bg-zinc-600/10' },
-  cancelled:    { label: 'Cancelled',  cls: 'text-zinc-500 border-zinc-700/30 bg-zinc-800/10' },
+  resolved:     { label: 'Resolved',   cls: 'text-zinc-600 border-orange-300/30 bg-zinc-600/10' },
+  cancelled:    { label: 'Cancelled',  cls: 'text-zinc-500 border-orange-200/30 bg-orange-100/10' },
 };
 
 function timeAgo(dateStr: string): string {
@@ -255,7 +255,7 @@ export default function InstitutionDashboard() {
   ).length;
 
   return (
-    <div className="h-screen w-screen bg-zinc-950 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-white flex flex-col overflow-hidden">
       {/* Broadcast Modal */}
       <AnimatePresence>
         {store.activeBroadcast && (
@@ -269,16 +269,16 @@ export default function InstitutionDashboard() {
       </AnimatePresence>
 
       {/* ── Top Bar ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800/60 bg-zinc-950/90 backdrop-blur-sm shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-5 py-3 border-b border-orange-200/60 bg-white/90 backdrop-blur-sm shrink-0 gap-3 sm:gap-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-red-600/15 border border-red-600/25 flex items-center justify-center">
-            <Shield className="w-4 h-4 text-red-500" />
+          <div className="w-8 h-8 rounded-lg bg-orange-500/15 border border-orange-500/25 flex items-center justify-center shrink-0">
+            <Shield className="w-4 h-4 text-orange-500" />
           </div>
-          <div>
-            <h1 className="text-sm font-bold text-zinc-100 tracking-tight leading-none">
-              GUARDIAN WAR ROOM
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-bold text-zinc-900 tracking-tight leading-none truncate">
+              VAASTA WAR ROOM
             </h1>
-            <p className="text-[11px] text-zinc-500 mt-0.5">
+            <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
               {institute ? (
                 <>{institute.name} · {institute.zone}</>
               ) : (
@@ -290,76 +290,82 @@ export default function InstitutionDashboard() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide shrink-0">
           {/* Live indicator */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <motion.div
               className="w-2 h-2 rounded-full bg-emerald-500"
               animate={{ opacity: [1, 0.3, 1] }}
               transition={{ duration: 2, repeat: Infinity }}
             />
-            <span className="text-xs font-medium text-zinc-400">LIVE</span>
+            <span className="text-xs font-medium text-zinc-600 hidden sm:inline">LIVE</span>
           </div>
 
-          <div className="w-px h-5 bg-zinc-800" />
+          <div className="w-px h-5 bg-orange-100 shrink-0 hidden sm:block" />
 
-          <Badge variant="outline" className="text-emerald-400 border-emerald-600/30 bg-emerald-600/5 gap-1.5 text-xs">
+          <Badge variant="outline" className="text-emerald-400 border-emerald-600/30 bg-emerald-600/5 gap-1.5 text-xs shrink-0 whitespace-nowrap">
             <Ambulance className="w-3 h-3" />
-            {availableCount} Available
+            {availableCount} Avail
           </Badge>
-          <Badge variant="outline" className="text-amber-400 border-amber-600/30 bg-amber-600/5 gap-1.5 text-xs">
+          <Badge variant="outline" className="text-amber-400 border-amber-600/30 bg-amber-600/5 gap-1.5 text-xs shrink-0 whitespace-nowrap">
             <Radio className="w-3 h-3" />
-            {dispatchedCount} Dispatched
+            {dispatchedCount} Disp
           </Badge>
         </div>
       </div>
 
       {/* ── Stats Strip ─────────────────────────────────────── */}
-      <div className="flex items-center gap-px border-b border-zinc-800/60 shrink-0">
+      <div className="grid grid-cols-4 gap-px border-b border-orange-200/60 shrink-0 bg-orange-200/60 overflow-hidden">
         {[
-          { label: 'Active Incidents', value: activeIncidents.length, color: 'text-red-400' },
-          { label: 'Total Resources', value: resources.length, color: 'text-zinc-300' },
-          { label: 'On Scene', value: resources.filter(r => r.status === 'on_scene').length, color: 'text-blue-400' },
-          { label: 'Returning', value: resources.filter(r => r.status === 'returning').length, color: 'text-zinc-400' },
+          { label: 'Active', value: activeIncidents.length, color: 'text-orange-600' },
+          { label: 'Resources', value: resources.length, color: 'text-zinc-500' },
+          { label: 'On Scene', value: resources.filter(r => r.status === 'on_scene').length, color: 'text-blue-500' },
+          { label: 'Returning', value: resources.filter(r => r.status === 'returning').length, color: 'text-zinc-600' },
         ].map((stat) => (
-          <div key={stat.label} className="flex-1 px-4 py-2 text-center border-r border-zinc-800/60 last:border-r-0">
-            <div className={`text-lg font-bold ${stat.color}`}>{stat.value}</div>
-            <div className="text-[10px] text-zinc-600 uppercase tracking-wider">{stat.label}</div>
+          <div key={stat.label} className="px-1 sm:px-4 py-2 text-center bg-white flex flex-col items-center justify-center">
+            <div className={`text-sm sm:text-lg font-bold ${stat.color}`}>{stat.value}</div>
+            <div className="text-[8px] sm:text-[10px] text-zinc-500 uppercase tracking-widest truncate w-full">{stat.label}</div>
           </div>
         ))}
       </div>
 
       {/* ── Main Content ─────────────────────────────────────── */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
         {/* Map */}
-        <div className="flex-1 relative">
-          <GuardianMap markers={mapMarkers} zoom={12} />
+        <div className="flex-1 relative min-h-[40vh] md:min-h-0 bg-orange-50">
+          <VaastaMap markers={mapMarkers} zoom={12} />
 
           {/* Map legend */}
-          <div className="absolute bottom-4 left-4 z-[1000] flex flex-col gap-1.5 bg-zinc-950/80 backdrop-blur-sm border border-zinc-800/60 rounded-xl p-3">
+          <div className="absolute bottom-4 left-4 right-4 md:right-auto z-[1000] flex md:flex-col gap-1.5 bg-white/90 backdrop-blur-sm border border-orange-200/60 rounded-xl p-2 md:p-3 overflow-x-auto shadow-sm">
             {[
               { color: '#dc2626', label: 'Incident' },
               { color: '#22c55e', label: 'Available' },
               { color: '#3b82f6', label: 'Station' },
             ].map((item) => (
-              <div key={item.label} className="flex items-center gap-2">
+              <div key={item.label} className="flex items-center gap-1.5 shrink-0 pr-2 md:pr-0 border-r md:border-r-0 border-orange-200/50 last:border-0">
                 <div
-                  className="w-2.5 h-2.5 rounded-full"
+                  className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full"
                   style={{ backgroundColor: item.color, boxShadow: `0 0 6px ${item.color}88` }}
                 />
-                <span className="text-[10px] text-zinc-400">{item.label}</span>
+                <span className="text-[9px] md:text-[10px] text-zinc-600">{item.label}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── Sidebar ──────────────────────────────────────────── */}
-        <div className="w-80 border-l border-zinc-800/60 flex flex-col overflow-hidden bg-zinc-950">
-          <div className="px-4 pt-4 pb-2 flex items-center justify-between shrink-0">
+        {/* ── Sidebar / Bottom Sheet ──────────────────────────── */}
+        <div className="w-full md:w-80 h-[45vh] md:h-auto border-t md:border-t-0 md:border-l border-orange-200/60 flex flex-col bg-white shrink-0 shadow-[0_-4px_25px_-5px_rgba(0,0,0,0.1)] md:shadow-none z-10">
+          
+          {/* Mobile Drag Handle Visual */}
+          <div className="w-full flex justify-center pt-2 pb-1 md:hidden bg-orange-50/50 border-b border-orange-100/50">
+            <div className="w-12 h-1.5 rounded-full bg-zinc-200" />
+          </div>
+
+          <div className="px-4 py-3 pb-2 flex items-center justify-between shrink-0 bg-white">
             <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
               Active Incidents
             </h2>
-            <span className="text-[10px] text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">
               {activeIncidents.length}
             </span>
           </div>
@@ -380,10 +386,10 @@ export default function InstitutionDashboard() {
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                   >
                     <Card
-                      className={`bg-zinc-900/60 border-zinc-800/60 p-3 cursor-pointer transition-all duration-200 ${
+                      className={`bg-orange-50/60 border-orange-200/60 p-3 cursor-pointer transition-all duration-200 ${
                         isSelected
-                          ? 'border-red-600/40 bg-zinc-800/60 shadow-lg shadow-red-600/5'
-                          : 'hover:bg-zinc-800/50 hover:border-zinc-700/60'
+                          ? 'border-orange-500/40 bg-orange-100/60 shadow-lg shadow-orange-500/5'
+                          : 'hover:bg-orange-100/50 hover:border-orange-200/60'
                       }`}
                       onClick={() => setSelectedIncident(isSelected ? null : incident.id)}
                     >
@@ -392,14 +398,14 @@ export default function InstitutionDashboard() {
                         <div className="flex items-center gap-2">
                           <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
                             incident.severity
-                              ? incident.severity >= 4 ? 'bg-red-600/20 text-red-400' :
+                              ? incident.severity >= 4 ? 'bg-orange-500/20 text-orange-600' :
                                 incident.severity >= 3 ? 'bg-orange-600/20 text-orange-400' :
-                                'bg-yellow-600/20 text-yellow-400'
-                              : 'bg-zinc-800 text-zinc-500'
+                                'bg-yellow-600/20 text-yellow-500'
+                              : 'bg-orange-100 text-zinc-500'
                           }`}>
                             {INCIDENT_ICONS[incident.incident_type ?? 'other'] ?? <HelpCircle className="w-3.5 h-3.5" />}
                           </div>
-                          <span className="text-sm font-semibold text-zinc-200 capitalize">
+                          <span className="text-sm font-semibold text-zinc-700 capitalize">
                             {incident.incident_type
                               ? incident.incident_type.replace('_', ' ')
                               : incident.status === 'intake'
@@ -421,16 +427,16 @@ export default function InstitutionDashboard() {
                       {/* Location */}
                       {incident.landmark ? (
                         <div className="flex items-center gap-1.5 mb-1.5">
-                          <MapPin className="w-3 h-3 text-zinc-600 shrink-0" />
-                          <span className="text-xs text-zinc-400 truncate">{incident.landmark}</span>
+                          <MapPin className="w-3 h-3 text-zinc-500 shrink-0" />
+                          <span className="text-xs text-zinc-600 truncate">{incident.landmark}</span>
                           {incident.zone && (
-                            <span className="text-[10px] text-zinc-600 shrink-0">· {incident.zone}</span>
+                            <span className="text-[10px] text-zinc-500 shrink-0">· {incident.zone}</span>
                           )}
                         </div>
                       ) : incident.status === 'intake' ? (
                         <div className="flex items-center gap-1.5 mb-1.5">
-                          <MapPin className="w-3 h-3 text-zinc-700 shrink-0" />
-                          <span className="text-xs text-zinc-600 italic">Locating...</span>
+                          <MapPin className="w-3 h-3 text-zinc-400 shrink-0" />
+                          <span className="text-xs text-zinc-500 italic">Locating...</span>
                         </div>
                       ) : null}
 
@@ -443,7 +449,7 @@ export default function InstitutionDashboard() {
                             exit={{ height: 0, opacity: 0 }}
                             className="overflow-hidden"
                           >
-                            <p className="text-xs text-zinc-400 leading-relaxed italic mb-2 bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/30">
+                            <p className="text-xs text-zinc-600 leading-relaxed italic mb-2 bg-orange-100/40 rounded-lg p-2.5 border border-orange-200/30">
                               &ldquo;{incident.summary}&rdquo;
                             </p>
                           </motion.div>
@@ -452,8 +458,8 @@ export default function InstitutionDashboard() {
 
                       {/* Bottom row */}
                       <div className="flex items-center gap-2 mt-1">
-                        <Clock className="w-3 h-3 text-zinc-700" />
-                        <span className="text-[10px] text-zinc-600">
+                        <Clock className="w-3 h-3 text-zinc-400" />
+                        <span className="text-[10px] text-zinc-500">
                           {timeAgo(incident.created_at)}
                         </span>
                         {incident.severity && (
@@ -479,34 +485,33 @@ export default function InstitutionDashboard() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center py-16 text-center"
+                className="flex flex-col items-center justify-center py-12 text-center"
               >
-                <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-3">
-                  <Radio className="w-5 h-5 text-zinc-700" />
+                <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center mb-3">
+                  <Radio className="w-4 h-4 text-zinc-400" />
                 </div>
                 <p className="text-sm text-zinc-600 font-medium">All Clear</p>
-                <p className="text-xs text-zinc-700 mt-1">No active incidents</p>
-                <p className="text-[10px] text-zinc-800 mt-0.5">Monitoring Karachi...</p>
+                <p className="text-xs text-zinc-500 mt-1">No active incidents</p>
               </motion.div>
             )}
           </div>
 
           {/* Resource status strip at bottom */}
           {resources.length > 0 && (
-            <div className="border-t border-zinc-800/60 px-4 py-3 shrink-0">
-              <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Resources</p>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="border-t border-orange-200/60 px-4 py-3 shrink-0 bg-white">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 font-semibold">Resources</p>
+              <div className="flex flex-wrap gap-1.5 overflow-y-auto max-h-[100px] scrollbar-hide pb-1">
                 {resources.map((r) => (
                   <div
                     key={r.id}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border ${
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
                       r.status === 'available'
-                        ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-400'
+                        ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'
                         : r.status === 'dispatched' || r.status === 'en_route'
-                        ? 'bg-amber-600/10 border-amber-600/20 text-amber-400'
+                        ? 'bg-amber-600/10 border-amber-600/20 text-amber-500'
                         : r.status === 'on_scene'
-                        ? 'bg-blue-600/10 border-blue-600/20 text-blue-400'
-                        : 'bg-zinc-800/50 border-zinc-700/30 text-zinc-500'
+                        ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
+                        : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
                     }`}
                   >
                     <div className="w-1.5 h-1.5 rounded-full bg-current" />

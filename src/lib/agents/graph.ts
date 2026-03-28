@@ -1,5 +1,5 @@
 // ============================================================
-// GUARDIAN — LangGraph Emergency Response State Machine
+// VAASTA — LangGraph Emergency Response State Machine
 // Nodes: intake → geocoding → broker → pivot (HITL) → patch
 // ============================================================
 
@@ -11,7 +11,7 @@ import type { IncidentCard, LandmarkData } from '@/types';
 // ============================================================
 // STATE DEFINITION
 // ============================================================
-const GuardianState = Annotation.Root({
+const VaastaState = Annotation.Root({
   // Input
   transcript: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
   caller_phone: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
@@ -40,12 +40,12 @@ const GuardianState = Annotation.Root({
   error: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
 });
 
-export type GuardianStateType = typeof GuardianState.State;
+export type VaastaStateType = typeof VaastaState.State;
 
 // ============================================================
 // NODE 1: INTAKE — Parse transcript → IncidentCard
 // ============================================================
-async function intakeNode(state: GuardianStateType): Promise<Partial<GuardianStateType>> {
+async function intakeNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
   const { transcript, incident_id } = state;
 
   try {
@@ -78,7 +78,7 @@ async function intakeNode(state: GuardianStateType): Promise<Partial<GuardianSta
 // ============================================================
 // NODE 2: GEOCODING — Match landmark → [lat, lng]
 // ============================================================
-async function geocodingNode(state: GuardianStateType): Promise<Partial<GuardianStateType>> {
+async function geocodingNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
   const { incident_card, incident_id } = state;
   if (!incident_card) return { error: 'No incident card', status: 'error' };
 
@@ -138,7 +138,7 @@ async function geocodingNode(state: GuardianStateType): Promise<Partial<Guardian
 // ============================================================
 // NODE 3: BROKER — Find nearest institute, create broadcast
 // ============================================================
-async function brokerNode(state: GuardianStateType): Promise<Partial<GuardianStateType>> {
+async function brokerNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
   const { incident_card, incident_id, exclude_list } = state;
   if (!incident_card?.lat || !incident_card?.lng) {
     return { error: 'No geocoded location', status: 'error' };
@@ -200,7 +200,7 @@ async function brokerNode(state: GuardianStateType): Promise<Partial<GuardianSta
 // ============================================================
 // NODE 4: PIVOT — HITL Breakpoint (waits for external signal)
 // ============================================================
-async function pivotNode(state: GuardianStateType): Promise<Partial<GuardianStateType>> {
+async function pivotNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
   // This node is a checkpoint. In production, execution pauses here.
   // The graph resumes when the Institute Dashboard sends ACCEPT/REJECT
   // via the /api/agent/respond endpoint.
@@ -242,7 +242,7 @@ async function pivotNode(state: GuardianStateType): Promise<Partial<GuardianStat
 // ============================================================
 // NODE 5: PATCH — Bridge voice call via Twilio
 // ============================================================
-async function patchNode(state: GuardianStateType): Promise<Partial<GuardianStateType>> {
+async function patchNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
   const { caller_phone, target_institute_phone, incident_id } = state;
   const supabase = createServiceClient();
 
@@ -273,7 +273,7 @@ async function patchNode(state: GuardianStateType): Promise<Partial<GuardianStat
 // ============================================================
 // ROUTING LOGIC
 // ============================================================
-function routeAfterPivot(state: GuardianStateType): string {
+function routeAfterPivot(state: VaastaStateType): string {
   if (state.pivot_decision === 'ACCEPT') return 'patch';
   if (state.pivot_decision === 'REJECT') return 'broker'; // Loop back
   return END; // Pause — waiting for HITL input
@@ -282,8 +282,8 @@ function routeAfterPivot(state: GuardianStateType): string {
 // ============================================================
 // BUILD GRAPH
 // ============================================================
-export function buildGuardianGraph() {
-  const graph = new StateGraph(GuardianState)
+export function buildVaastaGraph() {
+  const graph = new StateGraph(VaastaState)
     .addNode('intake', intakeNode)
     .addNode('geocoding', geocodingNode)
     .addNode('broker', brokerNode)

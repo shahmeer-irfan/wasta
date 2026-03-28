@@ -27,8 +27,8 @@ export const SEVERITY_COLORS: Record<number, string> = {
   1: 'text-green-400',
   2: 'text-yellow-400',
   3: 'text-orange-400',
-  4: 'text-red-500',
-  5: 'text-red-600',
+  4: 'text-orange-500',
+  5: 'text-orange-500',
 };
 
 export const STATUS_STEPS = [

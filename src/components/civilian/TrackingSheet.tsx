@@ -26,22 +26,22 @@ export default function TrackingSheet({
       initial={{ y: 300, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 200, damping: 25 }}
-      className="bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-800 rounded-t-3xl p-5 pb-8"
+      className="bg-orange-50/95 backdrop-blur-xl border-t border-orange-200 rounded-t-3xl p-5 pb-8"
     >
       {/* Drag handle */}
       <div className="flex justify-center mb-4">
-        <div className="w-10 h-1 rounded-full bg-zinc-700" />
+        <div className="w-10 h-1 rounded-full bg-orange-200" />
       </div>
 
       {/* Resource card */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-red-600/10 border border-red-600/20 flex items-center justify-center">
-            <Ambulance className="w-6 h-6 text-red-500" />
+          <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+            <Ambulance className="w-6 h-6 text-orange-500" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-zinc-100">
+              <span className="font-semibold text-zinc-900">
                 {resource?.call_sign ?? 'Dispatching...'}
               </span>
               {instituteName && (
@@ -98,18 +98,18 @@ export default function TrackingSheet({
                     animate={{ scale: [1, 1.3, 1] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
                   >
-                    <ArrowRight className="w-4 h-4 text-red-500" />
+                    <ArrowRight className="w-4 h-4 text-orange-500" />
                   </motion.div>
                 ) : (
-                  <Circle className="w-4 h-4 text-zinc-700" />
+                  <Circle className="w-4 h-4 text-zinc-500" />
                 )}
               </div>
               <span
                 className={`text-sm ${
                   isCompleted
-                    ? 'text-zinc-400'
+                    ? 'text-zinc-600'
                     : isCurrent
-                    ? 'text-zinc-100 font-medium'
+                    ? 'text-zinc-900 font-medium'
                     : 'text-zinc-600'
                 }`}
               >
@@ -129,7 +129,7 @@ export default function TrackingSheet({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="mt-4 w-full py-3 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-300 flex items-center justify-center gap-2 text-sm hover:bg-zinc-750"
+          className="mt-4 w-full py-3 rounded-xl bg-orange-100 border border-orange-200 text-zinc-400 flex items-center justify-center gap-2 text-sm hover:bg-zinc-750"
         >
           <Phone className="w-4 h-4" />
           Call Responder

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { AgentStatus, Incident, IncidentBroadcast, Resource } from '@/types';
 
-interface GuardianStore {
+interface VaastaStore {
   // Civilian state
   agentStatus: AgentStatus;
   transcript: string;
@@ -22,7 +22,7 @@ interface GuardianStore {
   reset: () => void;
 }
 
-export const useGuardianStore = create<GuardianStore>((set) => ({
+export const useVaastaStore = create<VaastaStore>((set) => ({
   agentStatus: 'idle',
   transcript: '',
   incidentId: null,

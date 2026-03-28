@@ -55,7 +55,7 @@ interface MapProps {
   className?: string;
 }
 
-export default function GuardianMap({
+export default function VaastaMap({
   center = KARACHI_CENTER,
   zoom = 12,
   markers = [],
@@ -70,7 +70,7 @@ export default function GuardianMap({
 
   if (!mounted) {
     return (
-      <div className={`${className} bg-zinc-900 flex items-center justify-center`}>
+      <div className={`${className} bg-orange-50 flex items-center justify-center`}>
         <div className="text-zinc-600 text-sm">Loading map...</div>
       </div>
     );

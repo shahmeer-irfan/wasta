@@ -31,7 +31,7 @@ export default function TranscriptStream({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <Badge variant="outline" className="border-red-600/50 text-red-400 gap-1.5">
+              <Badge variant="outline" className="border-orange-500/50 text-orange-600 gap-1.5">
                 <Mic className="w-3 h-3 animate-pulse" />
                 Live Transcript
               </Badge>
@@ -74,13 +74,13 @@ export default function TranscriptStream({
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="bg-zinc-900/80 rounded-xl p-4 border border-zinc-800/50 max-h-32 overflow-y-auto"
+          className="bg-orange-50/80 rounded-xl p-4 border border-orange-200/50 max-h-32 overflow-y-auto"
         >
-          <p className="text-sm text-zinc-300 leading-relaxed font-mono">
+          <p className="text-sm text-zinc-400 leading-relaxed font-mono">
             {transcript}
             {isListening && (
               <motion.span
-                className="inline-block w-1.5 h-4 bg-red-500 ml-1 -mb-0.5"
+                className="inline-block w-1.5 h-4 bg-orange-500 ml-1 -mb-0.5"
                 animate={{ opacity: [1, 0] }}
                 transition={{ duration: 0.8, repeat: Infinity }}
               />

@@ -1,5 +1,5 @@
 // ============================================================
-// GUARDIAN — Core Type Definitions
+// VAASTA — Core Type Definitions
 // ============================================================
 
 export interface Institute {

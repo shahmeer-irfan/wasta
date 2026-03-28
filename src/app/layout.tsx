@@ -14,7 +14,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Guardian — Emergency Response Broker',
+  title: 'Vaasta — Emergency Response Broker',
   description: 'AI-powered emergency response orchestration for Karachi',
 };
 
@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-50`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white text-zinc-50`}>
         {children}
       </body>
     </html>

@@ -7,13 +7,13 @@ import { Shield, AlertTriangle, Mic, MicOff, Send, X, RefreshCw, Phone, MapPin, 
 import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
-import { useGuardianStore } from '@/lib/store';
+import { useVaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
 
-const GuardianMap = dynamic(() => import('@/components/maps/GuardianMap'), {
+const VaastaMap = dynamic(() => import('@/components/maps/VaastaMap'), {
   ssr: false,
-  loading: () => <div className="h-full w-full bg-zinc-900 animate-pulse" />,
+  loading: () => <div className="h-full w-full bg-orange-50 animate-pulse" />,
 });
 
 type InputMode = 'idle' | 'voice' | 'text';
@@ -22,7 +22,7 @@ type InputMode = 'idle' | 'voice' | 'text';
 type SpeechRecognitionAny = any;
 
 export default function CivilianPage() {
-  const store = useGuardianStore();
+  const store = useVaastaStore();
   const [phase, setPhase] = useState<'pre-dispatch' | 'tracking'>('pre-dispatch');
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resourcePosition, setResourcePosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -289,7 +289,7 @@ export default function CivilianPage() {
   const canSubmitVoice = voiceTranscript.trim().length > 5;
 
   return (
-    <div className="h-screen w-screen bg-zinc-950 overflow-hidden relative">
+    <div className="h-screen w-screen bg-white overflow-hidden relative">
       <AnimatePresence mode="wait">
         {phase === 'pre-dispatch' ? (
           <motion.div
@@ -302,9 +302,9 @@ export default function CivilianPage() {
             <div className="px-6 pt-8 pb-4 flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
-                  <Shield className="w-5 h-5 text-red-500" />
-                  <span className="text-lg font-black text-zinc-100 tracking-tight">
-                    GUARDIAN
+                  <Shield className="w-5 h-5 text-orange-500" />
+                  <span className="text-lg font-black text-zinc-900 tracking-tight">
+                    VAASTA
                   </span>
                 </div>
                 <p className="text-xs text-zinc-500 ml-7">Emergency Response · Karachi</p>
@@ -318,7 +318,7 @@ export default function CivilianPage() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
                     onClick={handleReset}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors text-xs"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-100 border border-orange-200 text-zinc-600 hover:text-zinc-400 hover:bg-orange-200 transition-colors text-xs"
                   >
                     <RefreshCw className="w-3 h-3" />
                     Reset
@@ -356,11 +356,11 @@ export default function CivilianPage() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="w-full max-w-sm flex items-start gap-2 px-4 py-3 rounded-xl bg-red-600/10 border border-red-600/20"
+                    className="w-full max-w-sm flex items-start gap-2 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/20"
                   >
-                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                    <span className="text-sm text-red-300">{error}</span>
-                    <button onClick={() => setError(null)} className="ml-auto text-zinc-500 hover:text-zinc-300">
+                    <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+                    <span className="text-sm text-orange-700">{error}</span>
+                    <button onClick={() => setError(null)} className="ml-auto text-zinc-500 hover:text-zinc-400">
                       <X className="w-4 h-4" />
                     </button>
                   </motion.div>
@@ -398,20 +398,20 @@ export default function CivilianPage() {
                   </p>
 
                   {/* ── VOICE INPUT ─────────────────────────── */}
-                  <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800/50 overflow-hidden">
+                  <div className="rounded-2xl bg-orange-50/80 border border-orange-200/50 overflow-hidden">
                     <div className="flex items-center gap-3 px-4 py-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                        isRecording ? 'bg-red-600/20 border border-red-500/30' : 'bg-zinc-800'
+                        isRecording ? 'bg-orange-500/20 border border-orange-500/30' : 'bg-orange-100'
                       }`}>
                         {isRecording
                           ? <motion.div animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
-                              <Mic className="w-4 h-4 text-red-400" />
+                              <Mic className="w-4 h-4 text-orange-600" />
                             </motion.div>
-                          : <Mic className="w-4 h-4 text-zinc-400" />
+                          : <Mic className="w-4 h-4 text-zinc-600" />
                         }
                       </div>
                       <div className="flex-1">
-                        <p className="text-xs font-medium text-zinc-300">Voice Input</p>
+                        <p className="text-xs font-medium text-zinc-400">Voice Input</p>
                         <p className="text-[10px] text-zinc-600">
                           {isRecording
                             ? 'Listening... speak now'
@@ -427,7 +427,7 @@ export default function CivilianPage() {
                             animate={{ opacity: 1, scale: 1 }}
                             onClick={handleVoiceSubmit}
                             disabled={!canSubmitVoice}
-                            className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center disabled:opacity-40 transition-colors"
+                            className="w-8 h-8 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 flex items-center justify-center disabled:opacity-40 transition-all shadow-sm"
                           >
                             <Send className="w-3.5 h-3.5 text-white" />
                           </motion.button>
@@ -435,7 +435,7 @@ export default function CivilianPage() {
                         {voiceTranscript && (
                           <button
                             onClick={() => { setVoiceTranscript(''); store.setTranscript(''); }}
-                            className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors"
+                            className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center text-zinc-500 hover:text-zinc-400 transition-colors"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -445,8 +445,8 @@ export default function CivilianPage() {
                           onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
                           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                             isRecording
-                              ? 'bg-red-600/20 text-red-400 border border-red-600/30 hover:bg-red-600/30'
-                              : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                              ? 'bg-orange-500/20 text-orange-600 border border-orange-500/30 hover:bg-orange-500/30'
+                              : 'bg-orange-100 text-zinc-400 hover:bg-orange-200'
                           }`}
                         >
                           {isRecording ? 'Stop' : 'Record'}
@@ -463,12 +463,12 @@ export default function CivilianPage() {
                           exit={{ height: 0, opacity: 0 }}
                           className="px-4 pb-3"
                         >
-                          <div className="bg-zinc-800/60 rounded-lg p-3 border border-zinc-700/40">
-                            <p className="text-xs text-zinc-300 leading-relaxed font-mono">
+                          <div className="bg-orange-100/60 rounded-lg p-3 border border-orange-200/40">
+                            <p className="text-xs text-zinc-400 leading-relaxed font-mono">
                               {voiceTranscript}
                               {isRecording && (
                                 <motion.span
-                                  className="inline-block w-1 h-3 bg-red-500 ml-1 -mb-0.5"
+                                  className="inline-block w-1 h-3 bg-orange-500 ml-1 -mb-0.5"
                                   animate={{ opacity: [1, 0] }}
                                   transition={{ duration: 0.6, repeat: Infinity }}
                                 />
@@ -482,17 +482,17 @@ export default function CivilianPage() {
 
                   {/* Divider */}
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-zinc-800" />
+                    <div className="flex-1 h-px bg-orange-100" />
                     <span className="text-[10px] text-zinc-600 uppercase tracking-wider">or</span>
-                    <div className="flex-1 h-px bg-zinc-800" />
+                    <div className="flex-1 h-px bg-orange-100" />
                   </div>
 
                   {/* ── TEXT INPUT ──────────────────────────── */}
-                  <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800/50 overflow-hidden">
+                  <div className="rounded-2xl bg-orange-50/80 border border-orange-200/50 overflow-hidden">
                     <div className="px-4 pt-3 pb-2">
                       <div className="flex items-center gap-2 mb-2">
                         <Phone className="w-3.5 h-3.5 text-zinc-500" />
-                        <p className="text-xs font-medium text-zinc-300">Type Emergency Details</p>
+                        <p className="text-xs font-medium text-zinc-400">Type Emergency Details</p>
                       </div>
                       <textarea
                         ref={textAreaRef}
@@ -505,7 +505,7 @@ export default function CivilianPage() {
                         }}
                         placeholder="Describe what's happening, location, injuries... (Ctrl+Enter to send)"
                         rows={3}
-                        className="w-full bg-transparent text-sm text-zinc-200 placeholder-zinc-600 resize-none outline-none leading-relaxed"
+                        className="w-full bg-transparent text-sm text-zinc-400 placeholder-zinc-600 resize-none outline-none leading-relaxed"
                       />
                     </div>
                     <div className="flex items-center justify-between px-4 pb-3">
@@ -518,7 +518,7 @@ export default function CivilianPage() {
                         whileTap={{ scale: 0.95 }}
                         onClick={handleTextSubmit}
                         disabled={!canSubmitText}
-                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-colors"
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all shadow-sm"
                       >
                         <Send className="w-3 h-3" />
                         Send Emergency
@@ -531,7 +531,7 @@ export default function CivilianPage() {
 
             {/* Bottom bar */}
             <div className="px-6 py-4 flex items-center justify-center">
-              <div className="flex items-center gap-1.5 text-zinc-700 text-xs">
+              <div className="flex items-center gap-1.5 text-zinc-500 text-xs">
                 <AlertTriangle className="w-3 h-3" />
                 <span>For genuine emergencies only</span>
               </div>
@@ -547,7 +547,7 @@ export default function CivilianPage() {
           >
             {/* Full-screen map */}
             <div className="flex-1 relative">
-              <GuardianMap
+              <VaastaMap
                 markers={mapMarkers}
                 flyTo={store.incident?.lat && store.incident?.lng ? {
                   lat: store.incident.lat,
@@ -559,8 +559,8 @@ export default function CivilianPage() {
               {/* Top overlay */}
               <div className="absolute top-0 left-0 right-0 p-4 pt-10 z-[1000]">
                 <div className="flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-red-500" />
-                  <span className="text-sm font-semibold text-zinc-100">GUARDIAN</span>
+                  <Shield className="w-4 h-4 text-orange-500" />
+                  <span className="text-sm font-semibold text-zinc-900">VAASTA</span>
                   <motion.div
                     className="ml-auto px-3 py-1 rounded-full bg-emerald-600/20 border border-emerald-600/30"
                     animate={{ opacity: [1, 0.6, 1] }}
@@ -574,15 +574,15 @@ export default function CivilianPage() {
                 {store.incident && (
                   <div className="flex items-center gap-2 mt-3 flex-wrap">
                     {store.incident.landmark && (
-                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900/80 border border-zinc-700/50 backdrop-blur-sm">
-                        <MapPin className="w-3 h-3 text-red-400" />
-                        <span className="text-xs text-zinc-300">{store.incident.landmark}</span>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50/80 border border-orange-200/50 backdrop-blur-sm">
+                        <MapPin className="w-3 h-3 text-orange-600" />
+                        <span className="text-xs text-zinc-400">{store.incident.landmark}</span>
                       </div>
                     )}
                     {store.eta && (
-                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900/80 border border-zinc-700/50 backdrop-blur-sm">
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50/80 border border-orange-200/50 backdrop-blur-sm">
                         <Clock className="w-3 h-3 text-amber-400" />
-                        <span className="text-xs text-zinc-300">
+                        <span className="text-xs text-zinc-400">
                           ~{Math.ceil(store.eta / 60)} min ETA
                         </span>
                       </div>
