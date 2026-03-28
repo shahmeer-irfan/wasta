@@ -114,7 +114,7 @@ export default function WaastaMap({
         const iconConf = ICON_MAP[m.iconType || 'default'];
         const isPing = m.iconType === 'incident';
         return (
-          <Marker key={i} position={[m.lat, m.lng]} icon={createIcon(iconConf.color, iconConf.size, isPing)}>
+          <Marker key={`${i}-${m.lat}-${m.lng}`} position={[m.lat, m.lng]} icon={createIcon(iconConf.color, iconConf.size, isPing)}>
             {m.popup && (
               <Popup>
                 <span className="text-xs text-zinc-900">{m.popup}</span>

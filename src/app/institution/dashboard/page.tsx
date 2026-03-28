@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Activity, Radio, MapPin, Clock, Ambulance,
+  Shield, Activity, Radio, MapPin, Clock, Ambulance,
   Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft
 } from 'lucide-react';
 import Link from 'next/link';
@@ -16,10 +16,10 @@ import CallPanel from '@/components/institution/CallPanel';
 import { useInstitutionStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '@/lib/constants';
-const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 import type { MapMarker } from '@/components/maps/WaastaMap';
-
 import type { Incident, IncidentBroadcast, Institute, Resource } from '@/types';
+
+const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 
 const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
   ssr: false,
@@ -65,6 +65,34 @@ export default function InstitutionDashboard() {
   const [isResponding, setIsResponding] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
   const [, setTick] = useState(0); // for live time updates
+  const [isRinging, setIsRinging] = useState(false);
+  const audioRef = useRef<AudioContext | null>(null);
+
+  // Play a beep ring using Web Audio API (no external file needed)
+  const playRing = useCallback(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioRef.current = ctx;
+      const playBeep = (time: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.3, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+        osc.start(time);
+        osc.stop(time + 0.4);
+      };
+      playBeep(ctx.currentTime);
+      playBeep(ctx.currentTime + 0.5);
+      playBeep(ctx.currentTime + 1.0);
+    } catch {
+      // Audio not supported — silent fail
+    }
+  }, []);
 
   // Refresh relative timestamps every 30s
   useEffect(() => {
@@ -151,6 +179,9 @@ export default function InstitutionDashboard() {
               ...broadcast,
               incidents: incident as Incident,
             });
+            // 🔔 Ring the dispatcher
+            setIsRinging(true);
+            playRing();
           }
         }
       )
@@ -209,6 +240,8 @@ export default function InstitutionDashboard() {
   const handleResponse = useCallback(async (decision: 'ACCEPT' | 'REJECT') => {
     if (!store.activeBroadcast) return;
     setIsResponding(true);
+    setIsRinging(false); // stop ringing when dispatcher acts
+
 
     try {
       await fetch('/api/agent/respond', {
@@ -240,7 +273,7 @@ export default function InstitutionDashboard() {
     ...resources.map((r) => ({
       lat: r.lat,
       lng: r.lng,
-      iconType: r.status === 'available' ? 'ambulance' as const : 'incident' as const,
+      iconType: 'ambulance' as const,
       popup: `${r.call_sign} — ${r.status}`,
     })),
     ...(institute ? [{
@@ -305,7 +338,7 @@ export default function InstitutionDashboard() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide shrink-0">
+        <div className="flex items-center gap-3">
           {/* Live indicator */}
           <div className="flex items-center gap-1.5 shrink-0">
             <motion.div
