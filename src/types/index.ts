@@ -34,7 +34,7 @@ export interface Incident {
   zone: string | null;
   lat: number | null;
   lng: number | null;
-  status: 'intake' | 'geocoded' | 'broadcasting' | 'accepted' | 'dispatched' | 'en_route' | 'on_scene' | 'resolved' | 'cancelled';
+  status: 'intake' | 'geocoded' | 'broadcasting' | 'accepted' | 'dispatched' | 'en_route' | 'on_scene' | 'returning' | 'resolved' | 'cancelled';
   accepted_by: string | null;
   assigned_resource: string | null;
   exclude_list: string[];
