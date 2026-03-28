@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
-import { AlertTriangle, Mic, Send, X, RefreshCw, MapPin, Clock, ChevronLeft, Zap } from 'lucide-react';
+import { AlertTriangle, Mic, Send, X, RefreshCw, MapPin, Clock, ChevronLeft, Zap, CheckCircle2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import SOSButton from '@/components/civilian/SOSButton';
@@ -27,7 +27,7 @@ type SpeechRecognitionAny = any;
 
 export default function CivilianPage() {
   const store = useWaastaStore();
-  const [phase, setPhase] = useState<'pre-dispatch' | 'tracking'>('pre-dispatch');
+  const [phase, setPhase] = useState<'pre-dispatch' | 'tracking' | 'cancelled' | 'completed'>('pre-dispatch');
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resourcePosition, setResourcePosition] = useState<{ lat: number; lng: number } | null>(null);
   const [textInput, setTextInput] = useState('');
@@ -343,7 +343,44 @@ export default function CivilianPage() {
   return (
     <div className="h-screen w-screen bg-white overflow-x-hidden relative" style={{ overflowY: phase === 'pre-dispatch' ? 'auto' : 'hidden' }}>
       <AnimatePresence mode="wait">
-        {phase === 'pre-dispatch' ? (
+        {phase === 'cancelled' || phase === 'completed' ? (
+          <motion.div
+            key="terminal"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.05 }}
+            className="absolute inset-0 z-50 flex items-center justify-center bg-white p-6 h-full"
+          >
+            <div className="max-w-md w-full text-center space-y-8">
+              <div className="flex justify-center">
+                <div className={`w-24 h-24 rounded-full flex items-center justify-center ${
+                  phase === 'completed' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'
+                }`}>
+                  {phase === 'completed' ? <CheckCircle2 className="w-12 h-12" /> : <XCircle className="w-12 h-12" />}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <h1 className="text-3xl font-black text-gray-900 tracking-tight">
+                  {phase === 'completed' ? 'Emergency Resolved' : 'Service Cancelled'}
+                </h1>
+                <p className="text-gray-500 font-medium leading-relaxed">
+                  {phase === 'completed' 
+                    ? 'The emergency response team has successfully resolved the incident. Thank you for using Waasta.'
+                    : 'This emergency request has been cancelled or discarded by the dispatch center. If this is a mistake, please file a new report.'}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  store.reset();
+                  setPhase('pre-dispatch');
+                }}
+                className="w-full py-4 bg-gray-900 text-white font-bold rounded-2xl hover:bg-black transition-colors"
+              >
+                Create New Report
+              </button>
+            </div>
+          </motion.div>
+        ) : phase === 'pre-dispatch' ? (
           <motion.div
             key="pre-dispatch"
             className="h-full flex flex-col relative overflow-y-auto"
