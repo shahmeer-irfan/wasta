@@ -2,7 +2,7 @@
 
 > Multi-agent AI system that connects civilians to rescue services through voice AI, real-time dispatch, and live ambulance tracking.
 
-Built for [Hackathon Name] — a production-grade emergency response broker powered by LangGraph orchestration, Groq Whisper STT, and WebRTC voice communication.
+Built for AI Mustaqbil 2.0 — a production-grade emergency response broker powered by LangGraph orchestration, Groq Whisper STT, and WebRTC voice communication.
 
 ---
 
@@ -379,7 +379,7 @@ Click **Demo** (bottom of civilian page) to trigger a random Karachi emergency w
 
 ## Team
 
-Built during [Hackathon Name] — 15-hour sprint.
+Built during AI Mustaqbil 2.0 — 24-hour sprint.
 
 ---
 
