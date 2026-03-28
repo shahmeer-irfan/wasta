@@ -170,15 +170,18 @@ export class VoiceChannel {
     this.pendingCandidates = [];
   }
 
-  private send(type: string, data: Record<string, unknown>): void {
+  private async send(type: string, data: Record<string, unknown>): Promise<void> {
     if (!this.channel) return;
-    this.channel.send({
-      type: 'broadcast',
-      event: 'webrtc',
-      payload: { type, from: this.role, ...data },
-    }).then((status) => {
+    try {
+      const status = await this.channel.send({
+        type: 'broadcast',
+        event: 'webrtc',
+        payload: { type, from: this.role, ...data },
+      });
       if (status !== 'ok') console.warn(`[VOICE:${this.role}] Send ${type} status: ${status}`);
-    });
+    } catch (err) {
+      console.warn(`[VOICE:${this.role}] Send ${type} failed:`, err);
+    }
   }
 
   setMuted(muted: boolean): void {
@@ -196,9 +199,14 @@ export class VoiceChannel {
     this.pendingCandidates = [];
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     console.log(`[VOICE:${this.role}] Stop`);
-    try { this.send('hangup', {}); } catch { /* ok */ }
+    // Send hangup and WAIT for it to be delivered before cleanup
+    try {
+      await this.send('hangup', {});
+      // Small delay to ensure peer receives the message
+      await new Promise(r => setTimeout(r, 300));
+    } catch { /* ok */ }
     this.cleanup();
   }
 }

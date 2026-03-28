@@ -247,6 +247,34 @@ export default function InstitutionDashboard() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // ── Client-side simulation driver ─────────────────────────
+  // Polls /api/simulate/step every 2s for each en_route incident
+  useEffect(() => {
+    const enRouteIncidents = allIncidents.filter(i => i.status === 'en_route' && i.assigned_resource);
+    if (enRouteIncidents.length === 0) return;
+
+    const intervals = enRouteIncidents.map(incident => {
+      return setInterval(async () => {
+        try {
+          const res = await fetch('/api/simulate/step', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ incident_id: incident.id }),
+          });
+          const data = await res.json();
+          if (data.done) {
+            // Will be picked up by incident realtime subscription
+            console.log(`[SIM] Incident ${incident.id.substring(0,8)} arrived: ${data.status}`);
+          }
+        } catch (err) {
+          console.error('[SIM] Step error:', err);
+        }
+      }, 2000);
+    });
+
+    return () => intervals.forEach(clearInterval);
+  }, [allIncidents]);
+
   // Handle accept/reject
   const handleResponse = useCallback(async (decision: 'ACCEPT' | 'REJECT') => {
     if (!store.activeBroadcast) return;
@@ -697,8 +725,9 @@ export default function InstitutionDashboard() {
                     </span>
                   </div>
 
-                  {/* Voice chat — auto-connects when accepted */}
+                  {/* Voice chat — key forces fresh component per incident */}
                   <VoiceChat
+                    key={`voice-${dispatchable.id}`}
                     incidentId={dispatchable.id}
                     role="institution"
                     peerLabel="Civilian"
@@ -708,19 +737,31 @@ export default function InstitutionDashboard() {
                   {!isDispatched ? (
                     <motion.button
                       whileTap={{ scale: 0.97 }}
-                      onClick={async () => {
-                        console.log('[DASHBOARD] Dispatch:', dispatchable.id);
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const incId = dispatchable.id;
+                        const instId = instituteId;
+                        console.log('[DASHBOARD] Dispatch clicked:', incId, 'institute:', instId);
+
+                        if (!incId || !instId) {
+                          alert('Missing incident or institute ID');
+                          return;
+                        }
+
                         try {
                           const res = await fetch('/api/dispatch', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ incident_id: dispatchable.id, institute_id: instituteId }),
+                            body: JSON.stringify({ incident_id: incId, institute_id: instId }),
                           });
                           const data = await res.json();
-                          console.log('[DASHBOARD] Dispatch result:', data);
-                          if (!res.ok) alert(`Dispatch failed: ${data.error}`);
+                          console.log('[DASHBOARD] Dispatch result:', JSON.stringify(data));
+                          if (!res.ok) {
+                            alert(`Dispatch failed: ${data.error || 'Unknown error'}`);
+                          }
                         } catch (err) {
                           console.error('[DASHBOARD] Dispatch error:', err);
+                          alert('Dispatch request failed — check console');
                         }
                       }}
                       className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-2 hover:from-orange-500 hover:to-orange-700 transition-all shadow-sm"

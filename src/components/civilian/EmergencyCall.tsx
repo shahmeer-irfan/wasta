@@ -7,17 +7,16 @@ import { Badge } from '@/components/ui/badge';
 import { useWaastaStore } from '@/lib/store';
 
 interface EmergencyCallProps {
-  assistantId: string;
+  agentId?: string; // Not used anymore but kept for compat
   onTranscript: (text: string, role: 'user' | 'assistant') => void;
   onCallStart: () => void;
   onCallEnd: () => void;
   onIncidentReported: (data: { landmark: string; incident_type: string; severity: number }) => void;
   forceEnd?: boolean;
-  autoStart?: boolean; // Parent sets this to true to auto-start the call
+  autoStart?: boolean;
 }
 
 export default function EmergencyCall({
-  assistantId,
   onTranscript,
   onCallStart,
   onCallEnd,
@@ -25,251 +24,308 @@ export default function EmergencyCall({
   forceEnd = false,
   autoStart = false,
 }: EmergencyCallProps) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const vapiRef = useRef<any>(null);
   const [isCallActive, setIsCallActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [volumeLevel, setVolumeLevel] = useState(0);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const store = useWaastaStore();
 
-  // Initialize Vapi SDK lazily (client-side only)
-  const getVapi = useCallback(async () => {
-    if (vapiRef.current) return vapiRef.current;
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const sessionIdRef = useRef<string>(`session-${Date.now()}`);
+  const chunksRef = useRef<Blob[]>([]);
+  const isProcessingRef = useRef(false);
+  const turnCountRef = useRef(0);
 
-    const { default: Vapi } = await import('@vapi-ai/web');
-    const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY!);
+  // Speak text using browser Speech Synthesis (FREE, works in Urdu)
+  const speak = useCallback((text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!text || isMuted) { resolve(); return; }
 
-    // ── Event Listeners ──
-    vapi.on('call-start', () => {
-      setIsCallActive(true);
-      setIsConnecting(false);
-      onCallStart();
-      store.setAgentStatus('listening');
+      setIsSpeaking(true);
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ur-PK'; // Urdu
+      utterance.rate = 1.1;
+      utterance.pitch = 1.0;
+
+      // Try to find Urdu voice, fall back to Hindi, then default
+      const voices = speechSynthesis.getVoices();
+      const urduVoice = voices.find(v => v.lang.startsWith('ur'))
+        || voices.find(v => v.lang.startsWith('hi'))
+        || voices.find(v => v.lang.includes('IN'))
+        || null;
+
+      if (urduVoice) utterance.voice = urduVoice;
+
+      utterance.onend = () => { setIsSpeaking(false); resolve(); };
+      utterance.onerror = () => { setIsSpeaking(false); resolve(); };
+
+      speechSynthesis.cancel(); // Cancel any pending
+      speechSynthesis.speak(utterance);
     });
+  }, [isMuted]);
 
-    vapi.on('call-end', () => {
-      setIsCallActive(false);
-      setIsConnecting(false);
-      setVolumeLevel(0);
-      onCallEnd();
-    });
+  // Send audio to our API and get AI response
+  const processAudio = useCallback(async (audioBlob: Blob) => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
 
-    vapi.on('message', (msg: Record<string, unknown>) => {
-      // Live transcripts
-      if (msg.type === 'transcript') {
-        const text = msg.transcript as string;
-        const role = msg.role as 'user' | 'assistant';
-        if (text) {
-          onTranscript(text, role);
-          if (role === 'user') {
-            store.setTranscript(text);
-          }
-        }
+    try {
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'audio.webm');
+      formData.append('sessionId', sessionIdRef.current);
+
+      // Add GPS coords if available
+      if ('geolocation' in navigator) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000 });
+          });
+          formData.append('lat', pos.coords.latitude.toString());
+          formData.append('lng', pos.coords.longitude.toString());
+        } catch { /* GPS not available — fine */ }
       }
 
-      // Tool calls from the Vapi assistant (broker handshake)
-      if (msg.type === 'function-call' || msg.type === 'tool-calls') {
-        const calls = (msg.toolCalls || msg.functionCall ? [msg.functionCall] : []) as Array<Record<string, unknown>>;
-        for (const call of calls) {
-          if (call && (call.name === 'report_incident' || (call as Record<string, unknown>).function === 'report_incident')) {
-            const args = (typeof call.arguments === 'string' ? JSON.parse(call.arguments as string) : call.arguments) as Record<string, unknown>;
-            onIncidentReported({
-              landmark: (args.landmark as string) || '',
-              incident_type: (args.incident_type as string) || 'other',
-              severity: (args.severity as number) || 3,
-            });
-          }
-        }
+      console.log('[CALL] Sending audio to /api/voice/chat...');
+      const res = await fetch('/api/voice/chat', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      console.log('[CALL] Response:', data);
+
+      // Show transcript
+      if (data.transcript) {
+        onTranscript(data.transcript, 'user');
+        store.setTranscript(data.transcript);
       }
 
-      // When the AI reads back the dispatch confirmation, it means
-      // the webhook succeeded. The incident_id was set via onIncidentReported → polling.
-      // Nothing else needed here — the polling in the parent handles subscription.
+      // Handle tool call
+      if (data.toolCall && data.incident_id) {
+        onIncidentReported({
+          landmark: data.toolCall.landmark || 'GPS Location',
+          incident_type: data.toolCall.incident_type || 'medical',
+          severity: data.toolCall.severity || 3,
+        });
+        store.setIncidentId(data.incident_id);
+        store.setAgentStatus('broadcasting');
+      }
+
+      // Speak AI response
+      if (data.text) {
+        onTranscript(data.text, 'assistant');
+        await speak(data.text);
+      }
+
+      turnCountRef.current++;
+
+      // If incident reported, end after speaking
+      if (data.incident_id) {
+        setTimeout(() => {
+          endCall();
+        }, 2000);
+      }
+
+    } catch (err) {
+      console.error('[CALL] Process error:', err);
+    } finally {
+      isProcessingRef.current = false;
+    }
+  }, [onTranscript, onIncidentReported, store, speak]);
+
+  // Start recording a turn
+  const startListening = useCallback(() => {
+    if (!streamRef.current || isProcessingRef.current || isSpeaking) return;
+
+    chunksRef.current = [];
+    setIsListening(true);
+
+    const recorder = new MediaRecorder(streamRef.current, {
+      mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm',
     });
 
-    vapi.on('volume-level', (level: number) => {
-      setVolumeLevel(level);
-    });
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
 
-    vapi.on('error', (err: unknown) => {
-      console.error('Vapi error:', err);
-      setIsCallActive(false);
-      setIsConnecting(false);
-    });
+    recorder.onstop = () => {
+      setIsListening(false);
+      const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+      if (blob.size > 1000) { // Only process if meaningful audio
+        processAudio(blob);
+      }
+    };
 
-    vapiRef.current = vapi;
-    return vapi;
-  }, [onCallStart, onCallEnd, onTranscript, onIncidentReported, store]);
+    mediaRecorderRef.current = recorder;
+    recorder.start();
 
-  // Start call
+    // Auto-stop after 8 seconds (one turn)
+    setTimeout(() => {
+      if (recorder.state === 'recording') {
+        recorder.stop();
+      }
+    }, 8000);
+  }, [processAudio, isSpeaking]);
+
+  // Start the call
   const startCall = useCallback(async () => {
     if (isCallActive || isConnecting) return;
     setIsConnecting(true);
 
     try {
-      const vapi = await getVapi();
-      await vapi.start(assistantId);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+      streamRef.current = stream;
+
+      setIsCallActive(true);
+      setIsConnecting(false);
+      onCallStart();
+      store.setAgentStatus('listening');
+
+      // Speak first message
+      await speak('Waasta Emergency. Kya hua hai?');
+
+      // Start first listening turn
+      startListening();
+
     } catch (err) {
-      console.error('Failed to start Vapi call:', err);
+      console.error('[CALL] Start failed:', err);
       setIsConnecting(false);
     }
-  }, [isCallActive, isConnecting, getVapi, assistantId]);
+  }, [isCallActive, isConnecting, onCallStart, store, speak, startListening]);
 
-  // End call
-  const endCall = useCallback(async () => {
-    const vapi = vapiRef.current;
-    if (vapi) {
-      vapi.stop();
-    }
+  // End the call
+  const endCall = useCallback(() => {
+    speechSynthesis.cancel();
+    mediaRecorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
     setIsCallActive(false);
     setIsConnecting(false);
-  }, []);
+    setIsListening(false);
+    setIsSpeaking(false);
+    onCallEnd();
+  }, [onCallEnd]);
 
-  // Toggle mute
-  const toggleMute = useCallback(() => {
-    const vapi = vapiRef.current;
-    if (!vapi || !isCallActive) return;
-    const newMuted = !isMuted;
-    vapi.setMuted(newMuted);
-    setIsMuted(newMuted);
-  }, [isMuted, isCallActive]);
+  // Auto-restart listening after AI finishes speaking
+  useEffect(() => {
+    if (isCallActive && !isSpeaking && !isListening && !isProcessingRef.current && turnCountRef.current < 10) {
+      const timeout = setTimeout(startListening, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [isCallActive, isSpeaking, isListening, startListening]);
 
-  // Auto-start call when parent requests (SOS button pressed)
+  // Auto-start
   useEffect(() => {
     if (autoStart && !isCallActive && !isConnecting) {
       startCall();
     }
   }, [autoStart, isCallActive, isConnecting, startCall]);
 
-  // Force end call from parent (when institution accepts)
+  // Force end
   useEffect(() => {
     if (forceEnd && isCallActive) {
-      vapiRef.current?.stop();
-      setIsCallActive(false);
-      setIsConnecting(false);
+      endCall();
     }
-  }, [forceEnd, isCallActive]);
+  }, [forceEnd, isCallActive, endCall]);
 
-  // Cleanup on unmount
+  // Cleanup
   useEffect(() => {
     return () => {
-      vapiRef.current?.stop();
+      speechSynthesis.cancel();
+      streamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
 
-  // Volume visualization bars
-  const bars = 5;
-  const normalizedVolume = Math.min(1, volumeLevel);
+  // Load voices
+  useEffect(() => {
+    speechSynthesis.getVoices();
+    speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+  }, []);
 
   return (
-    <div className="w-full max-w-sm">
+    <div className="w-full">
       <AnimatePresence mode="wait">
         {!isCallActive && !isConnecting ? (
-          // ── Start Call Button ──
           <motion.button
             key="start"
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
+            exit={{ opacity: 0, y: -8 }}
             onClick={startCall}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl bg-red-600/10 border border-red-600/20 hover:bg-red-600/20 hover:border-red-600/30 transition-all group"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
           >
-            <div className="w-12 h-12 rounded-xl bg-red-600/20 border border-red-600/30 flex items-center justify-center group-hover:bg-red-600/30 transition-colors">
-              <Phone className="w-5 h-5 text-red-400" />
+            <div className="w-10 h-10 rounded-full bg-orange-500/20 border border-orange-500/30 flex items-center justify-center">
+              <Phone className="w-4 h-4 text-orange-600" />
             </div>
             <div className="text-left">
-              <div className="text-sm font-semibold text-zinc-100">
-                Speak to Guardian AI
-              </div>
-              <div className="text-xs text-zinc-500">
-                Describe your emergency by voice
-              </div>
+              <div className="text-sm font-semibold text-zinc-800">Waasta AI se baat karein</div>
+              <div className="text-[11px] text-zinc-500">Voice mein apni emergency batayein</div>
             </div>
           </motion.button>
         ) : (
-          // ── Active Call Panel ──
           <motion.div
             key="active"
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="rounded-2xl bg-zinc-900/90 border border-zinc-800/50 overflow-hidden"
+            exit={{ opacity: 0, y: -8 }}
+            className="rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden"
           >
-            {/* Call header */}
-            <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800/30">
+            <div className="px-4 py-2.5 flex items-center justify-between border-b border-zinc-800">
               <div className="flex items-center gap-2">
                 <motion.div
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: isConnecting ? '#f59e0b' : '#22c55e' }}
+                  style={{ backgroundColor: isConnecting ? '#f59e0b' : isListening ? '#ef4444' : isSpeaking ? '#22c55e' : '#22c55e' }}
                   animate={{ opacity: [1, 0.4, 1] }}
                   transition={{ duration: 1.2, repeat: Infinity }}
                 />
                 <span className="text-xs font-medium text-zinc-300">
-                  {isConnecting ? 'Connecting...' : 'Guardian AI · Live'}
+                  {isConnecting ? 'Connecting...' : isListening ? 'Sun raha hai...' : isSpeaking ? 'Bol raha hai...' : 'Waasta AI · Live'}
                 </span>
               </div>
-              <Badge variant="outline" className="text-[10px] text-red-400 border-red-600/30">
+              <Badge variant="outline" className="text-[10px] text-orange-400 border-orange-600/30">
                 <Mic className="w-2.5 h-2.5 mr-1" />
-                CALL ACTIVE
+                {isListening ? 'RECORDING' : isSpeaking ? 'SPEAKING' : 'ACTIVE'}
               </Badge>
             </div>
 
-            {/* Volume visualizer */}
-            <div className="px-4 py-4">
-              <div className="flex items-center justify-center gap-1.5 h-10">
-                {Array.from({ length: bars }).map((_, i) => {
-                  const threshold = (i + 1) / bars;
-                  const active = normalizedVolume >= threshold * 0.5;
-                  return (
-                    <motion.div
-                      key={i}
-                      className="w-1.5 rounded-full"
-                      style={{
-                        backgroundColor: active ? '#ef4444' : '#27272a',
-                      }}
-                      animate={{
-                        height: active ? `${20 + normalizedVolume * 20}px` : '8px',
-                      }}
-                      transition={{ duration: 0.1 }}
-                    />
-                  );
-                })}
+            <div className="px-4 py-4 flex items-center justify-center">
+              <div className="flex items-center gap-1.5 h-8">
+                {[...Array(5)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className={`w-1.5 rounded-full ${isListening ? 'bg-red-500' : isSpeaking ? 'bg-emerald-500' : 'bg-zinc-600'}`}
+                    animate={{
+                      height: isListening || isSpeaking ? [8, 20 + Math.random() * 12, 8] : [4, 6, 4],
+                    }}
+                    transition={{ duration: 0.3, repeat: Infinity, delay: i * 0.1 }}
+                  />
+                ))}
               </div>
             </div>
 
-            {/* Call controls */}
             <div className="px-4 pb-4 flex items-center justify-center gap-6">
-
-              <div className="relative flex items-center justify-center w-14 h-14">
-                {/* ── Audio Ripples tied to voice volume ── */}
-                {!isMuted && normalizedVolume > 0.05 && (
-                  <motion.div
-                    className="absolute inset-0 rounded-full bg-orange-500/30 blur-sm pointer-events-none"
-                    animate={{
-                      scale: 1 + (normalizedVolume * 1.5),
-                      opacity: Math.max(0, 0.8 - normalizedVolume)
-                    }}
-                    transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
-                  />
-                )}
-
-                <motion.button
-                  whileTap={{ scale: 0.9 }}
-                  onClick={toggleMute}
-                  className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-colors z-10 ${isMuted
-                      ? 'bg-amber-600/20 border border-amber-600/30 text-amber-400'
-                      : 'bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 shadow-lg'
-                    }`}
-                >
-                  {isMuted ? <Volume2 className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                </motion.button>
-              </div>
+              <motion.button
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setIsMuted(!isMuted)}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
+                  isMuted ? 'bg-amber-600/20 border border-amber-600/30 text-amber-400'
+                    : 'bg-zinc-800 border border-zinc-700 text-zinc-300'
+                }`}
+              >
+                {isMuted ? <Volume2 className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </motion.button>
 
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 onClick={endCall}
-                className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-colors glow-red"
+                className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-colors"
               >
                 <PhoneOff className="w-5 h-5 text-white" />
               </motion.button>
