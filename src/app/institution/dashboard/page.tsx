@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Radio, MapPin, Clock, Ambulance,
-  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft
+  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft, RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -616,11 +616,15 @@ export default function InstitutionDashboard() {
                           ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
                           : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
                       }`}
+                      title={r.status !== 'available' ? `Click to Force ${r.call_sign} to Available` : ''}
                     >
                       <div className="w-1.5 h-1.5 rounded-full bg-current" />
                       {r.call_sign}
                       {r.status !== 'available' && (
-                        <span className="text-[8px] opacity-70">{r.status.replace('_', ' ')}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] opacity-70">{r.status.replace('_', ' ')}</span>
+                          <RefreshCw className="w-2.5 h-2.5 opacity-40 hover:opacity-100 transition-opacity" />
+                        </div>
                       )}
                     </motion.div>
                   ))}
@@ -703,16 +707,39 @@ export default function InstitutionDashboard() {
                       DISPATCH AMBULANCE
                     </motion.button>
                   ) : (
-                    <div className="w-full py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-2">
-                      <Ambulance className="w-4 h-4" />
-                      {assignedRes?.call_sign || 'AMBULANCE'} DISPATCHED
-                      {dispatchable.status === 'en_route' && (
-                        <motion.span
-                          className="w-1.5 h-1.5 rounded-full bg-emerald-500"
-                          animate={{ opacity: [1, 0.3, 1] }}
-                          transition={{ duration: 1, repeat: Infinity }}
-                        />
-                      )}
+                    <div className="space-y-2">
+                      <div className="w-full py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-2">
+                        <Ambulance className="w-4 h-4" />
+                        {assignedRes?.call_sign || 'AMBULANCE'} DISPATCHED
+                        {dispatchable.status === 'en_route' && (
+                          <motion.span
+                            className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                          />
+                        )}
+                      </div>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`Force ${assignedRes?.call_sign || 'resource'} to Available? Incident will be deleted.`)) return;
+                          
+                          if (assignedRes) {
+                            await supabase.from('resources').update({
+                              status: 'available',
+                              updated_at: new Date().toISOString()
+                            }).eq('id', assignedRes.id);
+                          }
+                          
+                          await supabase.from('incident_broadcasts').delete().eq('incident_id', dispatchable.id);
+                          await supabase.from('incidents').delete().eq('id', dispatchable.id);
+                          setAllIncidents(prev => prev.filter(i => i.id !== dispatchable.id));
+                        }}
+                        className="w-full text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-semibold uppercase tracking-tighter flex items-center justify-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Recall & Free Resource
+                      </button>
                     </div>
                   )}
                 </div>
