@@ -36,13 +36,20 @@ export async function simulateMovement({
     const [lat, lng] = waypoints[step];
     const isLast = step === totalSteps;
 
-    // Move resource along waypoint
-    await supabase.from('resources').update({
+    // Move resource along waypoint if it hasn't been externally aborted
+    const { data: resData } = await supabase.from('resources').update({
       lat,
       lng,
       status: isLast ? 'on_scene' : 'en_route',
       updated_at: new Date().toISOString(),
-    }).eq('id', resourceId);
+    }).eq('id', resourceId)
+      .neq('status', 'available')
+      .select('id');
+
+    if (!resData || resData.length === 0) {
+      console.log('[SIMULATION] Resource externally freed. Aborting simulation loop.');
+      return;
+    }
 
     // Update route progress (drives the orange progress line on both maps)
     await supabase.from('incidents').update({
@@ -77,12 +84,19 @@ export async function simulateMovement({
     const [lat, lng] = returnWaypoints[step];
     const isLast = step === returnSteps;
 
-    await supabase.from('resources').update({
+    const { data: retData } = await supabase.from('resources').update({
       lat,
       lng,
       status: isLast ? 'available' : 'returning',
       updated_at: new Date().toISOString(),
-    }).eq('id', resourceId);
+    }).eq('id', resourceId)
+      .neq('status', 'available')
+      .select('id');
+
+    if (!retData || retData.length === 0) {
+      console.log('[SIMULATION] Resource externally freed during return trip. Aborting.');
+      return;
+    }
 
     if (!isLast) {
       // Use a faster interval for returning to speed up demo
