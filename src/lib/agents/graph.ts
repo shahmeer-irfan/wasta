@@ -33,7 +33,7 @@ const VaastaState = Annotation.Root({
   pivot_decision: Annotation<'ACCEPT' | 'REJECT' | ''>({ reducer: (_, b) => b, default: () => '' }),
 
   // Patch output
-  twilio_sid: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  session_id: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
 
   // Meta
   status: Annotation<string>({ reducer: (_, b) => b, default: () => 'intake' }),
@@ -240,31 +240,42 @@ async function pivotNode(state: VaastaStateType): Promise<Partial<VaastaStateTyp
 }
 
 // ============================================================
-// NODE 5: PATCH — Bridge voice call via Twilio
+// NODE 5: PATCH — Mark dispatched (voice handled via Vapi WebRTC)
 // ============================================================
 async function patchNode(state: VaastaStateType): Promise<Partial<VaastaStateType>> {
-  const { caller_phone, target_institute_phone, incident_id } = state;
+  const { incident_id, target_institute_id } = state;
+
   const supabase = createServiceClient();
 
   try {
-    // Call internal API to bridge the call
-    const response = await fetch(`${getBaseUrl()}/api/twilio/bridge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        caller_phone,
-        institute_phone: target_institute_phone,
-        incident_id,
-      }),
+    // Assign nearest available resource from the accepted institute
+    const { data: resource } = await supabase
+      .from('resources')
+      .select('*')
+      .eq('institute_id', target_institute_id)
+      .eq('status', 'available')
+      .limit(1)
+      .single();
+
+    if (resource) {
+      await supabase.from('resources').update({ status: 'dispatched' }).eq('id', resource.id);
+      await supabase.from('incidents').update({
+        status: 'dispatched',
+        assigned_resource: resource.id,
+      }).eq('id', incident_id);
+    } else {
+      await supabase.from('incidents').update({
+        status: 'dispatched',
+      }).eq('id', incident_id);
+    }
+
+    // Log the session (voice is handled client-side via Vapi WebRTC)
+    await supabase.from('call_logs').insert({
+      incident_id,
+      status: 'connected',
     });
 
-    const result = await response.json();
-
-    await supabase.from('incidents').update({
-      status: 'dispatched',
-    }).eq('id', incident_id);
-
-    return { twilio_sid: result.sid ?? '', status: 'dispatched' };
+    return { session_id: `vapi-${incident_id}`, status: 'dispatched' };
   } catch (err) {
     return { error: `Patch failed: ${err}`, status: 'error' };
   }
@@ -318,5 +329,5 @@ function toRad(deg: number): number {
 
 function getBaseUrl(): string {
   if (typeof window !== 'undefined') return '';
-  return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
+  return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 }

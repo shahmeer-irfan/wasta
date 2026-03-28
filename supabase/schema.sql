@@ -81,7 +81,7 @@ CREATE TABLE call_logs (
   incident_id UUID REFERENCES incidents(id) ON DELETE CASCADE,
   caller_phone TEXT,
   institute_phone TEXT,
-  twilio_sid TEXT,
+  session_id TEXT,
   status TEXT DEFAULT 'initiated' CHECK (status IN ('initiated', 'ringing', 'connected', 'completed', 'failed')),
   started_at TIMESTAMPTZ DEFAULT NOW(),
   ended_at TIMESTAMPTZ
