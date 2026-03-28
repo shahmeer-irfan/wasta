@@ -22,6 +22,7 @@ export default function VoiceChat({
 }: VoiceChatProps) {
   const vcRef = useRef<VoiceChannel | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const wasConnectedRef = useRef(false);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'ended'>('idle');
   const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -36,22 +37,23 @@ export default function VoiceChat({
   const connect = useCallback(() => {
     if (vcRef.current || status === 'connecting') return;
     setStatus('connecting');
+    wasConnectedRef.current = false;
 
     const vc = new VoiceChannel(incidentId, role, {
       onConnected: () => {
         console.log('[VoiceChat] Connected!');
+        wasConnectedRef.current = true;
         setStatus('connected');
       },
       onDisconnected: () => {
-        // Only end if we were previously connected
-        if (status === 'connected') {
+        // Use ref instead of closure (closure captures stale status)
+        if (wasConnectedRef.current) {
+          console.log('[VoiceChat] Peer disconnected — ending call');
           setStatus('ended');
           onHangup?.();
         }
-        // If we were just 'connecting', stay in connecting state (peer not ready yet)
       },
       onRemoteStream: (stream) => {
-        // Play remote audio
         if (!audioRef.current) {
           audioRef.current = new Audio();
           audioRef.current.autoplay = true;
@@ -60,9 +62,7 @@ export default function VoiceChat({
       },
       onError: (err) => {
         console.error('Voice channel error:', err);
-        // Don't show "ended" for transient errors — stay in connecting
-        // Only show ended if we were previously connected
-        if (status === 'connected') {
+        if (wasConnectedRef.current) {
           setStatus('ended');
         }
       },

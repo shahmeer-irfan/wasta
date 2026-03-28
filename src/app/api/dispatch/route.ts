@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/client';
-import { simulateMovement } from '@/lib/simulation';
 import { fetchOSRMRoute, straightLineWaypoints } from '@/lib/routing';
 
 export const dynamic = 'force-dynamic';
@@ -75,15 +74,15 @@ export async function POST(req: NextRequest) {
     console.log(`[DISPATCH] Straight-line fallback: ${distanceKm}km, ${durationMin}min`);
   }
 
-  // Assign resource + store route + mark dispatched
+  // Assign resource + store route + mark en_route immediately
   await supabase.from('resources')
-    .update({ status: 'dispatched', updated_at: new Date().toISOString() })
+    .update({ status: 'en_route', updated_at: new Date().toISOString() })
     .eq('id', resource.id);
 
   await supabase.from('incidents')
     .update({
       assigned_resource: resource.id,
-      status: 'dispatched',
+      status: 'en_route',
       route_waypoints: waypoints,
       route_distance_km: distanceKm,
       route_duration_min: durationMin,
@@ -92,18 +91,14 @@ export async function POST(req: NextRequest) {
     })
     .eq('id', incident_id);
 
-  // Start simulation along waypoints (non-blocking)
-  simulateMovement({
-    resourceId: resource.id,
-    incidentId: incident_id,
-    waypoints,
-    intervalMs: 2000,
-  }).catch(console.error);
+  // Don't run simulation server-side (causes hangs with multiple dispatches)
+  // Return waypoints — client will poll /api/simulate/step to advance
 
   return NextResponse.json({
     success: true,
     resource_id: resource.id,
     call_sign: resource.call_sign,
+    waypoints_count: waypoints.length,
     incident_id,
     route_distance_km: distanceKm,
     route_duration_min: durationMin,

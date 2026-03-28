@@ -247,6 +247,34 @@ export default function InstitutionDashboard() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // ── Client-side simulation driver ─────────────────────────
+  // Polls /api/simulate/step every 2s for each en_route incident
+  useEffect(() => {
+    const enRouteIncidents = allIncidents.filter(i => i.status === 'en_route' && i.assigned_resource);
+    if (enRouteIncidents.length === 0) return;
+
+    const intervals = enRouteIncidents.map(incident => {
+      return setInterval(async () => {
+        try {
+          const res = await fetch('/api/simulate/step', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ incident_id: incident.id }),
+          });
+          const data = await res.json();
+          if (data.done) {
+            // Will be picked up by incident realtime subscription
+            console.log(`[SIM] Incident ${incident.id.substring(0,8)} arrived: ${data.status}`);
+          }
+        } catch (err) {
+          console.error('[SIM] Step error:', err);
+        }
+      }, 2000);
+    });
+
+    return () => intervals.forEach(clearInterval);
+  }, [allIncidents]);
+
   // Handle accept/reject
   const handleResponse = useCallback(async (decision: 'ACCEPT' | 'REJECT') => {
     if (!store.activeBroadcast) return;
