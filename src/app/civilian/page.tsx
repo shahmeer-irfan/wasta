@@ -10,7 +10,6 @@ import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
 import EmergencyCall from '@/components/civilian/EmergencyCall';
-import VoiceChat from '@/components/shared/VoiceChat';
 import { useWaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
