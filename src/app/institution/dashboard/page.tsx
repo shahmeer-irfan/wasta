@@ -225,6 +225,28 @@ export default function InstitutionDashboard() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Listen for resource changes (crucial for map movement and status labels)
+  useEffect(() => {
+    const channel = supabase
+      .channel('resource-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'resources' },
+        (payload) => {
+          if (payload.eventType === 'UPDATE') {
+            setResources((prev) =>
+              prev.map((r) =>
+                r.id === (payload.new as Resource).id ? (payload.new as Resource) : r
+              )
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   // Handle accept/reject
   const handleResponse = useCallback(async (decision: 'ACCEPT' | 'REJECT') => {
     if (!store.activeBroadcast) return;
