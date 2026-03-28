@@ -10,9 +10,12 @@ import {
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import BroadcastModal from '@/components/institution/BroadcastModal';
+import CallPanel from '@/components/institution/CallPanel';
 import { useInstitutionStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '@/lib/constants';
+
+const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 import type { MapMarker } from '@/components/maps/GuardianMap';
 import type { Incident, IncidentBroadcast, Institute, Resource } from '@/types';
 
@@ -59,7 +62,7 @@ export default function InstitutionDashboard() {
   const [allIncidents, setAllIncidents] = useState<Incident[]>([]);
   const [isResponding, setIsResponding] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
-  const [tick, setTick] = useState(0); // for live time updates
+  const [, setTick] = useState(0); // for live time updates
 
   // Refresh relative timestamps every 30s
   useEffect(() => {
@@ -514,6 +517,19 @@ export default function InstitutionDashboard() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Vapi Voice Channel */}
+          {VAPI_ASSISTANT_ID && activeIncidents.length > 0 && (
+            <div className="border-t border-zinc-800/60 px-3 py-3 shrink-0">
+              <CallPanel
+                assistantId={VAPI_ASSISTANT_ID}
+                incidentId={activeIncidents[0]?.id || ''}
+                onCallEnd={() => {
+                  // Call ended — could update UI state
+                }}
+              />
             </div>
           )}
         </div>

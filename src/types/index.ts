@@ -61,7 +61,7 @@ export interface CallLog {
   incident_id: string;
   caller_phone: string | null;
   institute_phone: string | null;
-  twilio_sid: string | null;
+  session_id: string | null;
   status: 'initiated' | 'ringing' | 'connected' | 'completed' | 'failed';
   started_at: string;
   ended_at: string | null;

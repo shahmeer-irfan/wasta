@@ -3,20 +3,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
-import { Shield, AlertTriangle, Mic, MicOff, Send, X, RefreshCw, Phone, MapPin, Clock } from 'lucide-react';
+import { Shield, AlertTriangle, Mic, Send, X, RefreshCw, Phone, MapPin, Clock } from 'lucide-react';
 import SOSButton from '@/components/civilian/SOSButton';
 import TranscriptStream from '@/components/civilian/TranscriptStream';
 import TrackingSheet from '@/components/civilian/TrackingSheet';
+import EmergencyCall from '@/components/civilian/EmergencyCall';
 import { useGuardianStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
+
+const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 
 const GuardianMap = dynamic(() => import('@/components/maps/GuardianMap'), {
   ssr: false,
   loading: () => <div className="h-full w-full bg-zinc-900 animate-pulse" />,
 });
-
-type InputMode = 'idle' | 'voice' | 'text';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SpeechRecognitionAny = any;
@@ -26,7 +27,6 @@ export default function CivilianPage() {
   const [phase, setPhase] = useState<'pre-dispatch' | 'tracking'>('pre-dispatch');
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resourcePosition, setResourcePosition] = useState<{ lat: number; lng: number } | null>(null);
-  const [inputMode, setInputMode] = useState<InputMode>('idle');
   const [textInput, setTextInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -121,7 +121,6 @@ export default function CivilianPage() {
         store.setIncidentId(data.incident_id);
         store.setBroadcastId(data.broadcast_id || null);
         store.setAgentStatus('broadcasting');
-        setInputMode('idle');
       } else {
         throw new Error('No incident ID returned');
       }
@@ -131,13 +130,6 @@ export default function CivilianPage() {
       store.setAgentStatus('idle');
     }
   }, [store]);
-
-  // ── Handle SOS Button ─────────────────────────────────────
-  const handleSOSPress = useCallback(() => {
-    if (store.agentStatus !== 'idle') return;
-    // Toggle input mode options
-    setInputMode((prev) => prev === 'idle' ? 'idle' : 'idle');
-  }, [store.agentStatus]);
 
   // ── Handle Voice Submit ───────────────────────────────────
   const handleVoiceSubmit = useCallback(() => {
@@ -157,7 +149,6 @@ export default function CivilianPage() {
   const handleReset = useCallback(() => {
     recognitionRef.current?.stop();
     setIsRecording(false);
-    setInputMode('idle');
     setTextInput('');
     setVoiceTranscript('');
     setError(null);
@@ -334,7 +325,7 @@ export default function CivilianPage() {
               <SOSButton
                 onPress={() => {
                   if (!isActive) {
-                    setInputMode((m) => m === 'idle' ? 'idle' : 'idle');
+                    // SOS pressed
                   }
                 }}
                 isActive={isActive}
@@ -386,6 +377,50 @@ export default function CivilianPage() {
                 )}
               </AnimatePresence>
 
+              {/* Vapi AI Voice Call — show when idle */}
+              {!isActive && VAPI_ASSISTANT_ID && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full max-w-sm"
+                >
+                  <EmergencyCall
+                    assistantId={VAPI_ASSISTANT_ID}
+                    onTranscript={(text, role) => {
+                      if (role === 'user') store.setTranscript(text);
+                    }}
+                    onCallStart={() => store.setAgentStatus('listening')}
+                    onCallEnd={() => {
+                      if (store.agentStatus === 'listening') {
+                        store.setAgentStatus('idle');
+                      }
+                    }}
+                    onIncidentReported={async (data) => {
+                      store.setAgentStatus('analyzing');
+                      try {
+                        const res = await fetch('/api/agent/trigger', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            transcript: store.transcript || `${data.incident_type} near ${data.landmark}`,
+                            caller_phone: '+92-300-0000000',
+                          }),
+                        });
+                        const result = await res.json();
+                        if (result.incident_id) {
+                          store.setIncidentId(result.incident_id);
+                          store.setBroadcastId(result.broadcast_id || null);
+                          store.setAgentStatus('broadcasting');
+                        }
+                      } catch (err) {
+                        console.error('Incident report failed:', err);
+                        store.setAgentStatus('idle');
+                      }
+                    }}
+                  />
+                </motion.div>
+              )}
+
               {/* Input options — show when idle */}
               {!isActive && (
                 <motion.div
@@ -394,7 +429,7 @@ export default function CivilianPage() {
                   className="w-full max-w-sm space-y-3"
                 >
                   <p className="text-xs text-zinc-500 text-center tracking-wide uppercase">
-                    Describe the emergency:
+                    {VAPI_ASSISTANT_ID ? 'Or describe manually:' : 'Describe the emergency:'}
                   </p>
 
                   {/* ── VOICE INPUT ─────────────────────────── */}
