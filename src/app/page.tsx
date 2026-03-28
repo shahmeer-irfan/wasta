@@ -27,13 +27,25 @@ export default function Home() {
         className="mb-12 text-center relative z-10"
       >
         <motion.div
-          className="w-20 h-20 rounded-3xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4 overflow-hidden relative"
-          animate={{ boxShadow: ['0 0 20px rgba(249,115,22,0.15)', '0 0 40px rgba(249,115,22,0.35)', '0 0 20px rgba(249,115,22,0.15)'] }}
-          transition={{ duration: 2.4, repeat: Infinity }}
+          className="w-40 h-40 mx-auto mb-0 relative z-20 flex items-center justify-center"
+          animate={{ 
+            filter: [
+              'drop-shadow(0 0 10px rgba(249,115,22,0.25))',
+              'drop-shadow(0 0 30px rgba(249,115,22,0.45))',
+              'drop-shadow(0 0 10px rgba(249,115,22,0.25))'
+            ] 
+          }}
+          transition={{ duration: 2.8, repeat: Infinity }}
         >
-          <Image src="/logo.png" alt="Waasta Logo" fill className="object-cover" />
+          <Image 
+            src="/logo%20Background%20Removed.png" 
+            alt="Waasta Logo" 
+            fill 
+            className="object-contain" 
+            priority 
+          />
         </motion.div>
-        <h1 className="text-3xl font-black text-zinc-900 tracking-tight">
+        <h1 className="text-5xl font-black bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400 tracking-tighter">
           WAASTA
         </h1>
         <p className="text-sm text-zinc-500 mt-1">

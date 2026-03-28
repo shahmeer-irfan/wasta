@@ -454,9 +454,9 @@ export default function CivilianPage() {
                   </div>
                 </Link>
                 <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <Image src="/logo.png" alt="Waasta" width={24} height={24} className="rounded-md" />
-                    <span className="text-lg font-black text-zinc-900 tracking-tight">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <Image src="/logo%20Background%20Removed.png" alt="Waasta" width={36} height={36} className="rounded-lg shadow-sm" priority />
+                    <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400 tracking-tight">
                       WAASTA
                     </span>
                   </div>
@@ -484,16 +484,18 @@ export default function CivilianPage() {
             {/* ── Main: Clean minimal layout ──────────────── */}
             <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
 
-              {/* Map background */}
-              <div className="absolute inset-0 pointer-events-none" style={{
-                opacity: 0.3,
-                WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
-                maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
+              {/* Map background — horizontal band with soft fade */}
+              <div className="absolute left-0 right-0 top-[40%] -translate-y-1/2 h-[45vh] pointer-events-none overflow-hidden" style={{
+                opacity: 0.4,
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 25%, black 75%, transparent), radial-gradient(circle at center, black 40%, transparent 85%)',
+                maskImage: 'linear-gradient(to bottom, transparent, black 25%, black 75%, transparent), radial-gradient(circle at center, black 40%, transparent 85%)',
+                WebkitMaskComposite: 'source-in',
+                maskComposite: 'intersect',
               }}>
                 <WaastaMap
                   center={userLocation ?? undefined}
-                  zoom={14}
-                  markers={userLocation ? [{ lat: userLocation.lat, lng: userLocation.lng, iconType: 'institute' as const }] : []}
+                  zoom={15}
+                  markers={userLocation ? [{ lat: userLocation.lat, lng: userLocation.lng, iconType: 'active' as any }] : []}
                   className="h-full w-full"
                 />
               </div>
@@ -750,9 +752,11 @@ export default function CivilianPage() {
 
         {/* Top overlay */}
         <div className="absolute top-0 left-0 right-0 p-4 pt-10 z-[1000]">
-          <div className="flex items-center gap-2">
-            <Image src="/logo.png" alt="Waasta" width={20} height={20} className="rounded" />
-            <span className="text-sm font-semibold text-zinc-900">WAASTA</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-7 h-7 relative">
+              <Image src="/logo%20Background%20Removed.png" alt="Waasta" fill className="object-contain" />
+            </div>
+            <span className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400">WAASTA</span>
             <motion.div
               className="ml-auto px-3 py-1 rounded-full bg-emerald-600/20 border border-emerald-600/30"
               animate={{ opacity: [1, 0.6, 1] }}

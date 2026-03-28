@@ -4,21 +4,36 @@ import { useMemo } from 'react';
 import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls, MapRoute, MapFitBounds } from '@/components/ui/map';
 import { KARACHI_CENTER } from '@/lib/constants';
 import { waypointsToGeoJSON } from '@/lib/routing';
+import { Hospital, Warehouse, Ambulance, Flame, Shield, Activity } from 'lucide-react';
+
+const ICON_MAP = {
+  hospital: Hospital,
+  station: Warehouse,
+  ambulance: Ambulance,
+  fire: Flame,
+  police: Shield,
+  incident: Activity,
+};
 
 export interface MapMarkerData {
   lat: number;
   lng: number;
-  iconType?: 'incident' | 'ambulance' | 'institute';
+  iconType?: 'incident' | 'ambulance' | 'institute' | 'offline' | 'arrived' | 'deployed' | 'active';
+  iconName?: keyof typeof ICON_MAP;
   popup?: string;
 }
 
 export type { MapMarkerData as MapMarker };
 
-const ICON_STYLES: Record<string, { bg: string; border: string; size: string; ping?: boolean }> = {
-  incident:  { bg: 'bg-red-500',     border: 'border-white',     size: 'h-4 w-4', ping: true },
-  ambulance: { bg: 'bg-emerald-500', border: 'border-white',     size: 'h-3.5 w-3.5' },
-  institute: { bg: 'bg-blue-500',    border: 'border-blue-200',  size: 'h-3 w-3' },
-  default:   { bg: 'bg-orange-500',  border: 'border-white',     size: 'h-3.5 w-3.5' },
+const ICON_STYLES: Record<string, { bg: string; border: string; size: string; iconSize: string; ping?: boolean }> = {
+  offline:   { bg: 'bg-red-500',     border: 'border-white',      size: 'h-8 w-8',   iconSize: 'w-5 h-5', ping: true },
+  arrived:   { bg: 'bg-emerald-500', border: 'border-emerald-500',size: 'h-6 w-6',   iconSize: 'w-4 h-4' },
+  deployed:  { bg: 'bg-orange-500',  border: 'border-orange-500', size: 'h-6 w-6',   iconSize: 'w-4 h-4' },
+  active:    { bg: 'bg-blue-500',    border: 'border-blue-500',   size: 'h-6 w-6',   iconSize: 'w-4 h-4' },
+  incident:  { bg: 'bg-red-500',     border: 'border-white',      size: 'h-8 w-8',   iconSize: 'w-5 h-5', ping: true },
+  ambulance: { bg: 'bg-emerald-500', border: 'border-emerald-500',size: 'h-6 w-6',   iconSize: 'w-4 h-4' },
+  institute: { bg: 'bg-zinc-800',    border: 'border-white',     size: 'h-9 w-9',   iconSize: 'w-5.5 h-5.5' },
+  default:   { bg: 'bg-orange-500',  border: 'border-orange-500', size: 'h-6 w-6',   iconSize: 'w-4 h-4' },
 };
 
 interface WaastaMapProps {
@@ -101,7 +116,16 @@ export default function WaastaMap({
                   {style.ping && (
                     <div className={`absolute ${style.size} rounded-full ${style.bg} opacity-40 animate-ping`} />
                   )}
-                  <div className={`relative ${style.size} rounded-full ${style.bg} ${style.border} border-2 shadow-lg`} />
+                  <div className={`relative ${style.size} rounded-full ${style.bg} ${style.border} shadow-xl flex items-center justify-center ${
+                    ['arrived', 'deployed', 'active', 'ambulance'].includes(m.iconType || '') 
+                      ? 'border-[5px] bg-opacity-20 backdrop-blur-[1px]' 
+                      : 'border-2'
+                  }`}>
+                    {m.iconName && ICON_MAP[m.iconName] && !['arrived', 'deployed', 'active', 'ambulance'].includes(m.iconType || '') && (() => {
+                      const IconComp = ICON_MAP[m.iconName];
+                      return <IconComp className={`${style.iconSize} text-white`} />;
+                    })()}
+                  </div>
                 </div>
               </MarkerContent>
               {m.popup && (

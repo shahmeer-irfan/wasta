@@ -35,36 +35,37 @@ void main(void) {
   vec2 uv=(FC-.5*R)/MN;
   vec2 st=uv*vec2(2,1);
 
-  // Start with white
-  vec3 col=vec3(1.0, 0.99, 0.97);
+  // Start with a very clean off-white
+  vec3 col=vec3(1.0, 0.99, 0.98);
 
   float d = length(uv);
-  float bg = fbm(vec2(st.x+T*0.4, -st.y*0.3));
+  float bg = fbm(vec2(st.x+T*0.2, -st.y*0.2));
 
-  // Subtle orange energy streaks on white
-  for (float i=1.; i<6.; i++) {
+  // Vibrant orange energy streaks
+  for (float i=1.; i<7.; i++) {
     vec2 p = uv;
-    p.x += 0.2*sin(i*1.3+T*0.8+p.y*2.5);
-    p.y += 0.15*cos(i*0.7+T*0.6);
-    float streak = 0.002/abs(p.y-0.08*sin(p.x*4.0+T*1.5+i));
+    p.x += 0.3*sin(i*1.5+T*0.6+p.y*2.0);
+    p.y += 0.1*cos(i*0.8+T*0.4);
+    float streak = 0.003/abs(p.y-0.12*sin(p.x*3.5+T*1.2+i*0.5));
 
-    // Orange streaks — very subtle on white
-    vec3 streakColor = vec3(0.96, 0.55, 0.15); // Orange
-    col -= streak * streakColor * 0.15 * (0.5+0.5*sin(i+T*0.5));
+    // Dynamic orange gradient: Amber to Gold
+    vec3 c1 = vec3(1.0, 0.45, 0.1); // Amber
+    vec3 c2 = vec3(1.0, 0.75, 0.2); // Gold
+    vec3 streakColor = mix(c1, c2, 0.5 + 0.5*sin(p.x*2.0 + i + T));
+    
+    float intensity = streak * 0.4 * (0.6 + 0.4*sin(i + T*0.5));
+    col = mix(col, streakColor, clamp(intensity, 0.0, 0.4));
   }
 
-  // Soft warm radial glow from center
-  float glow = 0.08/(d+0.3);
-  col -= glow * vec3(0.04, 0.02, 0.0) * 0.5;
+  // Warm radial glow from center
+  float glow = 0.05/(d+0.5);
+  col = mix(col, vec3(1.0, 0.8, 0.6), glow * 0.25);
 
-  // Very subtle background texture
-  col -= bg * vec3(0.03, 0.015, 0.005) * 0.4;
+  // Subtle background texture
+  col = mix(col, vec3(1.0, 0.9, 0.7), bg * 0.03);
 
-  // Gentle vignette — slightly darker at edges
-  col -= d*d * vec3(0.06, 0.03, 0.01);
-
-  // Clamp to stay light
-  col = clamp(col, vec3(0.88, 0.86, 0.84), vec3(1.0));
+  // Gentle vignette
+  col *= 1.0 - d*d*0.04;
 
   O=vec4(col,1);
 }`;

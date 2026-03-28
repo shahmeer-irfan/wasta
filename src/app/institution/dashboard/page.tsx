@@ -5,7 +5,8 @@ import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Radio, MapPin, Clock, Ambulance,
-  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft, RefreshCw
+  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft, RefreshCw,
+  Hospital, Warehouse
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -314,19 +315,24 @@ export default function InstitutionDashboard() {
       .map((i) => ({
         lat: i.lat!,
         lng: i.lng!,
-        iconType: 'incident' as const,
+        iconType: 'offline' as const,
+        iconName: 'incident' as const,
         popup: `🚨 ${i.incident_type ?? 'Emergency'} @ ${i.landmark ?? 'Unknown'} [${i.status}]`,
       })),
     ...resources.map((r) => ({
       lat: r.lat,
       lng: r.lng,
-      iconType: 'ambulance' as const,
+      iconType: (r.status === 'on_scene' ? 'arrived' 
+        : (['dispatched', 'en_route'].includes(r.status) ? 'deployed' 
+        : (r.status === 'available' ? 'active' : 'default'))) as any,
+      iconName: 'ambulance' as const,
       popup: `${r.call_sign} — ${r.status}`,
     })),
     ...(institute ? [{
       lat: institute.lat,
       lng: institute.lng,
       iconType: 'institute' as const,
+      iconName: institute.type === 'ambulance' ? 'hospital' as const : 'station' as const,
       popup: institute.name,
     }] : []),
   ];
@@ -345,10 +351,10 @@ export default function InstitutionDashboard() {
   const onSceneCount = resources.filter(r => r.status === 'on_scene').length;
 
   const statTiles = [
-    { label: 'Active', value: activeIncidents.length, color: '#dc2626', bg: '#fef2f2' },
+    { label: 'Arrived', value: onSceneCount, color: '#16a34a', bg: '#f0fdf4' },
     { label: 'Deployed', value: dispatchedCount, color: '#ea580c', bg: '#fff7ed' },
-    { label: 'On Scene', value: onSceneCount, color: '#16a34a', bg: '#f0fdf4' },
-    { label: 'Available', value: availableCount, color: '#2563eb', bg: '#eff6ff' },
+    { label: 'Active', value: availableCount, color: '#2563eb', bg: '#eff6ff' },
+    { label: 'Offline', value: activeIncidents.length, color: '#dc2626', bg: '#fef2f2' },
   ];
 
   return (
@@ -374,12 +380,12 @@ export default function InstitutionDashboard() {
               <ChevronLeft className="w-4 h-4 text-orange-600" />
             </div>
           </Link>
-          <div className="w-8 h-8 rounded-lg overflow-hidden relative shadow-sm border border-orange-200/50 shrink-0">
-            <Image src="/logo.png" alt="Waasta" fill className="object-cover" />
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <Image src="/logo%20Background%20Removed.png" alt="Waasta" width={32} height={32} className="object-contain" priority />
           </div>
-          <div>
-            <h1 className="text-[15px] font-bold text-gray-900 tracking-tight leading-none">
-              WAASTA War Room
+          <div className="ml-[-4px]">
+            <h1 className="text-lg font-black bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400 tracking-tight leading-none">
+              WAASTA
             </h1>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {institute ? `${institute.name} · ${institute.zone}` : 'Loading...'}
@@ -451,15 +457,31 @@ export default function InstitutionDashboard() {
               return d?.route_progress_step ?? null;
             })()}
           />
-          <div className="absolute bottom-4 left-4 z-[1000] flex flex-col gap-1 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg p-2.5 shadow-sm">
+          <div className="absolute bottom-4 left-4 z-[1000] flex flex-col gap-1.5 bg-white/95 backdrop-blur-sm border border-orange-100 rounded-lg p-3 shadow-md">
+            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Legend</p>
             {[
-              { color: '#dc2626', label: 'Incident' },
-              { color: '#22c55e', label: 'Available' },
-              { color: '#3b82f6', label: 'Station' },
+              { color: '#16a34a', label: 'Arrived', icon: Ambulance },
+              { color: '#ea580c', label: 'Deployed', icon: Ambulance },
+              { color: '#2563eb', label: 'Active', icon: Ambulance },
+              { color: '#dc2626', label: 'Offline', icon: Activity, ping: true },
+              { color: '#27272a', label: institute?.type === 'ambulance' ? 'Hospital' : 'Station', icon: institute?.type === 'ambulance' ? Hospital : Warehouse },
             ].map((item) => (
-              <div key={item.label} className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: item.color, boxShadow: `0 0 6px ${item.color}44` }} />
-                <span className="text-[10px] text-gray-500 font-medium">{item.label}</span>
+              <div key={item.label} className="flex items-center gap-2.5">
+                <div className="relative flex items-center justify-center">
+                  {item.ping && (
+                    <div className="absolute w-2.5 h-2.5 rounded-full bg-red-500 opacity-40 animate-ping" />
+                  )}
+                  <div className={`w-6 h-6 rounded-full shadow-sm flex items-center justify-center ${
+                    ['Arrived', 'Deployed', 'Active'].includes(item.label) 
+                      ? 'border-[5px] bg-opacity-20' 
+                      : 'border-2'
+                  }`} style={{ background: ['Arrived', 'Deployed', 'Active'].includes(item.label) ? `${item.color}33` : item.color, borderColor: ['Arrived', 'Deployed', 'Active'].includes(item.label) ? item.color : 'white' }}>
+                    {!['Arrived', 'Deployed', 'Active'].includes(item.label) && (
+                      <item.icon className="w-4 h-4 text-white" />
+                    )}
+                  </div>
+                </div>
+                <span className="text-[10px] text-gray-600 font-semibold">{item.label}</span>
               </div>
             ))}
           </div>
@@ -728,9 +750,14 @@ export default function InstitutionDashboard() {
                       {r.call_sign}
                       {r.status !== 'available' && (
                         <div className="flex items-center gap-1">
-                          <span className="text-[8px] opacity-70">{r.status.replace('_', ' ')}</span>
+                          <span className="text-[8px] opacity-70">
+                            {r.status === 'on_scene' ? 'arrived' : r.status.replace('_', ' ')}
+                          </span>
                           <RefreshCw className="w-2.5 h-2.5 opacity-40 hover:opacity-100 transition-opacity" />
                         </div>
+                      )}
+                      {r.status === 'available' && (
+                        <span className="text-[8px] opacity-70 ml-1">active</span>
                       )}
                     </motion.div>
                   ))}
