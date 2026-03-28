@@ -1,101 +1,97 @@
-import Image from "next/image";
+'use client';
+
+import { motion } from 'framer-motion';
+import { Shield, Phone, Building2, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
 export default function Home() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <div className="h-screen w-screen bg-zinc-950 flex flex-col items-center justify-center px-6">
+      {/* Logo */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-12 text-center"
+      >
+        <motion.div
+          className="w-20 h-20 rounded-2xl bg-red-600/10 border border-red-600/20 flex items-center justify-center mx-auto mb-4"
+          animate={{ boxShadow: ['0 0 20px rgba(220,38,38,0.2)', '0 0 40px rgba(220,38,38,0.4)', '0 0 20px rgba(220,38,38,0.2)'] }}
+          transition={{ duration: 3, repeat: Infinity }}
+        >
+          <Shield className="w-10 h-10 text-red-500" />
+        </motion.div>
+        <h1 className="text-3xl font-black text-zinc-100 tracking-tight">
+          GUARDIAN
+        </h1>
+        <p className="text-sm text-zinc-500 mt-1">
+          AI-Powered Emergency Response · Karachi
+        </p>
+      </motion.div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+      {/* Navigation cards */}
+      <div className="w-full max-w-md space-y-4">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2 }}
         >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          <Link href="/civilian" className="block">
+            <div className="group bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 hover:bg-zinc-900 hover:border-red-600/30 transition-all cursor-pointer">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-red-600/10 flex items-center justify-center">
+                    <Phone className="w-6 h-6 text-red-500" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-zinc-100">Civilian SOS</div>
+                    <div className="text-xs text-zinc-500 mt-0.5">
+                      Emergency call simulation
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-red-500 transition-colors" />
+              </div>
+            </div>
+          </Link>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.35 }}
         >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <Link href="/institution/dashboard" className="block">
+            <div className="group bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 hover:bg-zinc-900 hover:border-blue-600/30 transition-all cursor-pointer">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-600/10 flex items-center justify-center">
+                    <Building2 className="w-6 h-6 text-blue-500" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-zinc-100">Institution War Room</div>
+                    <div className="text-xs text-zinc-500 mt-0.5">
+                      Dispatch & monitoring dashboard
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-blue-500 transition-colors" />
+              </div>
+            </div>
+          </Link>
+        </motion.div>
+      </div>
+
+      {/* Footer */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.5 }}
+        className="mt-12 text-center"
+      >
+        <p className="text-[10px] text-zinc-700">
+          SAHAS 2.0 · LangGraph + Groq + Supabase Realtime
+        </p>
+      </motion.div>
     </div>
   );
 }
