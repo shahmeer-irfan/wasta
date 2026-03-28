@@ -376,6 +376,28 @@ function MapRoute({ coordinates, color = "#f97316", width = 3, opacity = 0.8 }: 
   return null;
 }
 
+// Auto-fit map to show a bounding box of coordinates
+function MapFitBounds({ coordinates }: { coordinates: [number, number][] }) {
+  const { map, isLoaded } = useMap();
+  const fitted = useRef(false);
+
+  useEffect(() => {
+    if (!isLoaded || !map || coordinates.length < 2 || fitted.current) return;
+    fitted.current = true;
+
+    const lngs = coordinates.map(c => c[0]);
+    const lats = coordinates.map(c => c[1]);
+    const bounds: [[number, number], [number, number]] = [
+      [Math.min(...lngs), Math.min(...lats)],
+      [Math.max(...lngs), Math.max(...lats)],
+    ];
+
+    map.fitBounds(bounds, { padding: 60, duration: 1000 });
+  }, [isLoaded, map, coordinates]);
+
+  return null;
+}
+
 export {
   Map,
   useMap,
@@ -384,4 +406,5 @@ export {
   MarkerPopup,
   MapControls,
   MapRoute,
+  MapFitBounds,
 };

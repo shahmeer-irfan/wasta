@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls, MapRoute } from '@/components/ui/map';
+import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls, MapRoute, MapFitBounds } from '@/components/ui/map';
 import { KARACHI_CENTER } from '@/lib/constants';
 import { waypointsToGeoJSON } from '@/lib/routing';
 
@@ -64,22 +64,25 @@ export default function WaastaMap({
       >
         <MapControls position="bottom-right" showZoom />
 
-        {/* Full route — light gray dashed line */}
+        {/* Auto-zoom to show full route */}
+        {fullRouteCoords && <MapFitBounds coordinates={fullRouteCoords} />}
+
+        {/* Full route — gray base line (the road path) */}
         {fullRouteCoords && (
           <MapRoute
             coordinates={fullRouteCoords}
-            color="#d1d5db"
-            width={5}
-            opacity={0.6}
+            color="#9ca3af"
+            width={6}
+            opacity={0.5}
           />
         )}
 
-        {/* Progress line — orange, shows distance covered */}
+        {/* Progress line — orange, shows distance covered (like Uber) */}
         {progressCoords && (
           <MapRoute
             coordinates={progressCoords}
             color="#ea580c"
-            width={5}
+            width={6}
             opacity={1}
           />
         )}
