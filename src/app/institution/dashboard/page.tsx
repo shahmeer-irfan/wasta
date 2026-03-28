@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Activity, Radio, MapPin, Clock, Ambulance,
-  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2
+  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, PhoneIncoming
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,10 +14,10 @@ import CallPanel from '@/components/institution/CallPanel';
 import { useInstitutionStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '@/lib/constants';
-
-const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 import type { MapMarker } from '@/components/maps/GuardianMap';
 import type { Incident, IncidentBroadcast, Institute, Resource } from '@/types';
+
+const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || '';
 
 const GuardianMap = dynamic(() => import('@/components/maps/GuardianMap'), {
   ssr: false,
@@ -63,6 +63,33 @@ export default function InstitutionDashboard() {
   const [isResponding, setIsResponding] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
   const [, setTick] = useState(0); // for live time updates
+  const [isRinging, setIsRinging] = useState(false);
+  const audioRef = useRef<AudioContext | null>(null);
+
+  // Play a beep ring using Web Audio API (no external file needed)
+  const playRing = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioRef.current = ctx;
+      const playBeep = (time: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.3, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+        osc.start(time);
+        osc.stop(time + 0.4);
+      };
+      playBeep(ctx.currentTime);
+      playBeep(ctx.currentTime + 0.5);
+      playBeep(ctx.currentTime + 1.0);
+    } catch {
+      // Audio not supported — silent fail
+    }
+  }, []);
 
   // Refresh relative timestamps every 30s
   useEffect(() => {
@@ -149,6 +176,9 @@ export default function InstitutionDashboard() {
               ...broadcast,
               incidents: incident as Incident,
             });
+            // 🔔 Ring the dispatcher
+            setIsRinging(true);
+            playRing();
           }
         }
       )
@@ -207,6 +237,8 @@ export default function InstitutionDashboard() {
   const handleResponse = useCallback(async (decision: 'ACCEPT' | 'REJECT') => {
     if (!store.activeBroadcast) return;
     setIsResponding(true);
+    setIsRinging(false); // stop ringing when dispatcher acts
+
 
     try {
       await fetch('/api/agent/respond', {
@@ -294,6 +326,26 @@ export default function InstitutionDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Incoming call ring indicator */}
+          <AnimatePresence>
+            {isRinging && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-600/20 border border-red-600/40"
+              >
+                <motion.div
+                  animate={{ scale: [1, 1.3, 1], rotate: [-15, 15, -15, 15, 0] }}
+                  transition={{ duration: 0.6, repeat: Infinity }}
+                >
+                  <PhoneIncoming className="w-3.5 h-3.5 text-red-400" />
+                </motion.div>
+                <span className="text-xs font-semibold text-red-400">INCOMING CALL</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Live indicator */}
           <div className="flex items-center gap-1.5">
             <motion.div

@@ -80,7 +80,8 @@ export default function CivilianPage() {
     recognitionRef.current = recognition;
     recognition.start();
     setIsRecording(true);
-    store.setAgentStatus('listening');
+    // Don't set agentStatus here — that hides the panel.
+    // agentStatus='listening' is only set by VAPI.
   }, [store]);
 
   const stopVoiceRecording = useCallback(() => {
@@ -275,7 +276,9 @@ export default function CivilianPage() {
     });
   }
 
-  const isActive = store.agentStatus !== 'idle';
+  // isActive = VAPI or agent pipeline is running (hides input panel)
+  // isRecording = browser speech API is recording (does NOT hide input panel)
+  const isActive = store.agentStatus !== 'idle' && !isRecording;
   const canSubmitText = textInput.trim().length > 10;
   const canSubmitVoice = voiceTranscript.trim().length > 5;
 
@@ -323,12 +326,8 @@ export default function CivilianPage() {
 
               {/* SOS Button */}
               <SOSButton
-                onPress={() => {
-                  if (!isActive) {
-                    // SOS pressed
-                  }
-                }}
-                isActive={isActive}
+                onPress={() => {}}
+                isActive={store.agentStatus !== 'idle'}
               />
 
               {/* Status / Transcript stream */}
