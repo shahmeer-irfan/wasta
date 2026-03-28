@@ -1,58 +1,133 @@
-# Waasta - AI Emergency Response Broker for Karachi
+# Waasta — AI Emergency Response System for Karachi
 
-Waasta is an AI-powered emergency response orchestration system that connects civilians in distress with the nearest available rescue institute in Karachi. A civilian calls the AI, the AI gathers critical details, routes the emergency to the right institute, and transfers the call -- all in under 30 seconds.
+> Multi-agent AI system that connects civilians to rescue services through voice AI, real-time dispatch, and live ambulance tracking.
 
-## How It Works
+Built for [Hackathon Name] — a production-grade emergency response broker powered by LangGraph orchestration, Groq Whisper STT, and WebRTC voice communication.
+
+---
+
+## Architecture
 
 ```
-CIVILIAN                        AI (Vapi)                       INSTITUTION
-   |                               |                                |
-   |-- "Speak to Waasta AI" ------>|                                |
-   |<-- "What's your emergency?" --|                                |
-   |-- "Accident at Nipa..." ----->|                                |
-   |                               |-- report_incident() --------->| (webhook -> Supabase)
-   |                               |                                | BROADCAST MODAL + RING
-   |<-- "Help is being sent..." ---|                                |
-   |                               |                                |
-   |   [call stays connected]      |              ACCEPT -----------|
-   |                               |                                |
-   |<-- "Connected to Edhi..." ----|   [incident -> accepted]       |
-   |                               |                                |
-   |                               |              DISPATCH ----------| <- human clicks
-   |                               |                                |
-   |<-- live ambulance tracking ---+---- simulation starts -------->| live tracking
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│   CIVILIAN APP   │     │   AI PIPELINE    │     │  INSTITUTION WAR │
+│   (Mobile-first) │     │  (Multi-Agent)   │     │      ROOM        │
+├──────────────────┤     ├──────────────────┤     ├──────────────────┤
+│ • SOS Button     │────►│ • Whisper STT    │────►│ • Broadcast Modal│
+│ • Voice AI Call  │     │ • Groq LLM Parse │     │ • Accept/Reject  │
+│ • Text Input     │     │ • LangGraph Flow │     │ • Voice Chat     │
+│ • Live Map       │     │ • OSRM Routing   │     │ • Dispatch Button│
+│ • Route Tracking │◄───►│ • Simulation     │◄───►│ • Live Tracking  │
+│ • WebRTC Voice   │     │ • Supabase RT    │     │ • Queue System   │
+└──────────────────┘     └──────────────────┘     └──────────────────┘
 ```
 
-### The Three Actors
+---
 
-| Actor | Role | Interface |
-|-------|------|-----------|
-| **Civilian** | Reports emergency via AI voice call, text, or speech-to-text | `/civilian` (mobile-first) |
-| **Waasta AI** | Gathers details, geocodes location, finds nearest institute, connects call | Vapi WebRTC + Groq LLM |
-| **Institution** | Receives broadcast, accepts emergency, dispatches ambulance | `/institution/dashboard` (desktop) |
+## Multi-Agent Orchestration (LangGraph)
 
-### Key Design Decisions
+The core AI pipeline is a **5-node LangGraph state machine** that processes each emergency:
 
-- **AI does NOT dispatch** -- it only gathers info and connects. The human dispatcher at the institution decides when to send an ambulance.
-- **Three input modes** for civilians: Vapi AI voice call, browser speech-to-text, or typed text.
-- **LangGraph state machine** with HITL (Human-in-the-Loop) checkpoint -- the graph pauses at the `pivot` node waiting for the institution's accept/reject decision.
-- **Supabase Realtime** for all live updates -- both civilian and institution see ambulance movement in real-time.
+```
+START ──► INTAKE ──► GEOCODE ──► BROKER ──► PIVOT (HITL) ──► PATCH ──► END
+                                    ▲            │
+                                    └── REJECT ──┘  (loops to find next institute)
+```
+
+| Agent Node | Role | Technology |
+|------------|------|-----------|
+| **Intake Agent** | Parses emergency transcript into structured data (type, severity, landmark) | Groq Llama 3.3 70B |
+| **Geocode Agent** | Matches caller's location words to 10+ Karachi landmarks with fuzzy scoring | Custom fuzzy matcher + GPS fallback |
+| **Broker Agent** | Finds nearest available rescue institute using haversine distance | Supabase query + distance calc |
+| **Pivot Agent** | HITL checkpoint — pauses graph, waits for human accept/reject | Supabase Realtime |
+| **Patch Agent** | Confirms acceptance, marks incident dispatched | Supabase update |
+
+### Agent State
+
+```typescript
+{
+  transcript: string,           // Raw emergency description
+  incident_id: string,          // Supabase incident UUID
+  incident_card: IncidentCard,  // Parsed: type, severity, landmark, summary
+  landmark_match: LandmarkData, // Geocoded: lat, lng, zone
+  broadcast_id: string,         // HITL handshake record
+  target_institute_id: string,  // Selected institute
+  exclude_list: string[],       // Rejected institutes (for retry loop)
+  pivot_decision: 'ACCEPT' | 'REJECT' | '',
+  status: string,               // Current pipeline stage
+}
+```
+
+---
+
+## Voice AI Pipeline (100% Free)
+
+Custom-built voice conversation system — no paid voice APIs:
+
+```
+Browser Microphone (8s chunks)
+        │
+        ▼
+  /api/voice/chat (POST audio blob)
+        │
+        ▼
+  Groq Whisper large-v3 (STT — Urdu/Hindi)
+        │
+        ▼
+  Groq Llama 3.3 70B (Conversational AI)
+        │
+        ├── Tool call detected? ──► Create incident + Run LangGraph
+        │
+        ▼
+  Browser SpeechSynthesis (TTS — Urdu voice, ur-PK)
+        │
+        ▼
+  Speaker plays response ──► Auto-records next turn
+```
+
+**Cost: $0** — Uses Groq free tier for STT + LLM, browser built-in TTS.
+
+---
+
+## Real-Time Features
+
+### WebRTC Voice Chat (Civilian ↔ Institution)
+- Browser-to-browser audio via RTCPeerConnection
+- Supabase Realtime broadcast channels for WebRTC signaling (SDP offer/answer + ICE candidates)
+- Auto-connects when institution accepts the broadcast
+- Hangup propagation — ending on one side ends both
+
+### OSRM Road Routing
+- Real Karachi road routes via OSRM public server (free, no API key)
+- 50-200 waypoints per route stored in Supabase
+- Client-driven simulation: dashboard polls `/api/simulate/step` every 2s
+- Both maps show: gray route line (planned) + orange progress line (covered)
+
+### Broadcast Queue
+- Multiple simultaneous calls handled via queue system
+- First call shows popup immediately
+- Subsequent calls queued with pulsing "X Waiting" indicator
+- Queue auto-promotes next call when current one is resolved
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 14 (App Router), TypeScript |
-| Styling | Tailwind CSS, Framer Motion, Lucide Icons |
-| AI Orchestration | LangGraph.js (5-node state machine) |
-| LLM | Groq (Llama 3.3 70B) for transcript parsing |
-| Voice | Vapi AI (WebRTC) for civilian-AI conversation |
-| Database | Supabase (PostgreSQL + Realtime) |
-| Maps | Leaflet.js (CartoDB tiles) |
-| State | Zustand |
-| UI Components | Radix UI (shadcn/ui) |
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Framework** | Next.js 14 (App Router), TypeScript | Full-stack web app |
+| **Styling** | Tailwind CSS, Framer Motion | UI + animations |
+| **AI Orchestration** | LangGraph.js | Multi-agent state machine |
+| **LLM** | Groq (Llama 3.3 70B) | Transcript parsing + conversation |
+| **STT** | Groq Whisper large-v3 | Voice-to-text (Urdu) |
+| **TTS** | Browser SpeechSynthesis | Text-to-voice (free) |
+| **Database** | Supabase (PostgreSQL + Realtime) | Persistence + live subscriptions |
+| **Maps** | MapLibre GL (CartoDB Voyager tiles) | Interactive maps |
+| **Routing** | OSRM (public, free) | Real road route calculation |
+| **Voice** | WebRTC + Supabase Broadcast | Browser-to-browser voice chat |
+| **State** | Zustand | Client state management |
+| **UI Components** | Radix UI (shadcn/ui) | Accessible primitives |
+| **Icons** | Lucide React | SVG icons |
 
 ---
 
@@ -61,184 +136,205 @@ CIVILIAN                        AI (Vapi)                       INSTITUTION
 ```
 src/
 ├── app/
-│   ├── page.tsx                          # Landing page (route picker)
+│   ├── page.tsx                          # Landing page
 │   ├── civilian/page.tsx                 # Mobile SOS UI
 │   ├── institution/dashboard/page.tsx    # Dispatcher war room
 │   └── api/
-│       ├── ai/parse-incident/route.ts    # Groq LLM: transcript -> structured data
-│       ├── agent/trigger/route.ts        # Start LangGraph pipeline (text input path)
-│       ├── agent/respond/route.ts        # HITL: institution accept/reject
-│       ├── dispatch/route.ts             # Institution dispatches ambulance
-│       ├── demo/trigger/route.ts         # One-click demo (random scenario)
-│       ├── simulate/route.ts             # Ambulance movement simulation
-│       └── vapi/webhook/route.ts         # Vapi AI tool-call handler
+│       ├── ai/parse-incident/            # Groq LLM transcript parser
+│       ├── agent/trigger/                # Start LangGraph pipeline
+│       ├── agent/respond/                # HITL accept/reject
+│       ├── dispatch/                     # Assign ambulance + OSRM route
+│       ├── simulate/step/                # Advance ambulance one waypoint
+│       ├── voice/chat/                   # Whisper STT + LLM conversation
+│       ├── voice/tts/                    # TTS helper
+│       ├── demo/trigger/                 # One-click demo scenario
+│       ├── vapi/webhook/                 # Vapi AI webhook (legacy)
+│       └── elevenlabs/tool/              # ElevenLabs tool handler (legacy)
 ├── components/
 │   ├── civilian/
-│   │   ├── EmergencyCall.tsx             # Vapi WebRTC voice call component
+│   │   ├── EmergencyCall.tsx             # Voice AI call component
 │   │   ├── SOSButton.tsx                 # Animated SOS trigger
-│   │   ├── TranscriptStream.tsx          # Live transcript + AI status badges
-│   │   └── TrackingSheet.tsx             # Bottom sheet: ETA, ambulance info, timeline
+│   │   ├── TranscriptStream.tsx          # Live transcript display
+│   │   └── TrackingSheet.tsx             # ETA, ambulance info, progress bar
 │   ├── institution/
-│   │   └── BroadcastModal.tsx            # Emergency alert modal (accept/reject)
-│   └── maps/
-│       └── WaastaMap.tsx                 # Leaflet map with custom markers
+│   │   └── BroadcastModal.tsx            # Emergency alert accept/reject
+│   ├── shared/
+│   │   └── VoiceChat.tsx                 # WebRTC voice chat (both sides)
+│   ├── maps/
+│   │   └── WaastaMap.tsx                 # MapLibre map with route lines
+│   └── ui/                              # shadcn/ui components
+│       ├── map.tsx                       # MapLibre GL primitives
+│       ├── button.tsx, badge.tsx, card.tsx, dialog.tsx, drawer.tsx
 ├── lib/
-│   ├── agents/graph.ts                   # LangGraph state machine (5 nodes)
+│   ├── agents/graph.ts                   # LangGraph 5-node state machine
+│   ├── voice-ai.ts                       # Whisper + Groq conversation engine
+│   ├── voice-channel.ts                  # WebRTC + Supabase signaling
+│   ├── routing.ts                        # OSRM route fetcher
+│   ├── simulation.ts                     # Ambulance movement engine
+│   ├── geocoding.ts                      # Reverse geocoding
+│   ├── constants.ts                      # Karachi landmarks + config
+│   ├── store.ts                          # Zustand stores + broadcast queue
 │   ├── supabase/client.ts                # Lazy Supabase client
-│   ├── constants.ts                      # Karachi landmarks, severity maps
-│   ├── simulation.ts                     # LERP ambulance movement engine
-│   ├── store.ts                          # Zustand stores (civilian + institution)
 │   └── utils.ts                          # cn() helper
-└── types/index.ts                        # All TypeScript interfaces
+└── types/index.ts                        # TypeScript interfaces
 ```
-
----
-
-## LangGraph Pipeline
-
-5-node state machine in `src/lib/agents/graph.ts`:
-
-```
-START -> intake -> geocoding -> broker -> pivot -> patch -> END
-                                  ^         |
-                                  |_REJECT__|  (loops to find next institute)
-```
-
-| Node | What It Does |
-|------|-------------|
-| **intake** | Sends transcript to Groq LLM -> extracts `incident_type`, `summary`, `severity`, `landmark` |
-| **geocoding** | Fuzzy-matches landmark against 10 Karachi locations -> resolves to `[lat, lng]` |
-| **broker** | Queries Supabase for nearest available institute by type -> creates broadcast record |
-| **pivot** | HITL checkpoint -- execution PAUSES. Resumes on institution ACCEPT/REJECT via `/api/agent/respond` |
-| **patch** | Assigns nearest available resource from accepted institute -> marks dispatched |
 
 ---
 
 ## Database Schema
 
-5 tables in Supabase (`supabase/schema.sql`):
+### Tables (Supabase PostgreSQL)
 
-| Table | Purpose |
-|-------|---------|
-| `institutes` | Rescue orgs (Edhi, Chhipa, Aman, KFD, Rescue 1122) |
-| `resources` | Vehicles (ambulances, fire trucks) with live lat/lng |
-| `incidents` | Each emergency with full lifecycle tracking |
-| `incident_broadcasts` | HITL handshake records (pending -> accepted/rejected) |
-| `call_logs` | Voice session records |
+**institutes** — Rescue organizations
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| name | TEXT | e.g., "Edhi Foundation - Gulshan" |
+| type | TEXT | ambulance, fire, police, rescue |
+| zone | TEXT | Karachi zone |
+| lat, lng | FLOAT | Station coordinates |
+| is_available | BOOLEAN | Accepting broadcasts |
 
-### Seeded Data
+**resources** — Individual vehicles
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| institute_id | UUID | FK to institutes |
+| call_sign | TEXT | e.g., "EDH-01" |
+| lat, lng | FLOAT | Live position (updated by simulation) |
+| status | TEXT | available, dispatched, en_route, on_scene, returning |
 
-- 5 Karachi rescue institutes
-- 3 ambulances per ambulance institute, 2 fire trucks per fire station
-- 10 Karachi landmarks for geocoding
+**incidents** — Each emergency
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| transcript | TEXT | Raw caller transcript |
+| summary | TEXT | AI-parsed Roman Urdu summary |
+| incident_type | TEXT | accident, fire, medical, crime, other |
+| severity | INT | 1-5 |
+| landmark | TEXT | Matched location name or "GPS Location" |
+| lat, lng | FLOAT | Geocoded or GPS coordinates |
+| status | TEXT | intake → geocoded → broadcasting → accepted → en_route → on_scene → resolved |
+| accepted_by | UUID | FK to institutes |
+| assigned_resource | UUID | FK to resources |
+| route_waypoints | JSONB | OSRM road route [[lat,lng]...] |
+| route_distance_km | FLOAT | Total route distance |
+| route_duration_min | FLOAT | Estimated drive time |
+| route_progress_step | INT | Current waypoint index |
+| exclude_list | UUID[] | Rejected institute IDs |
+
+**incident_broadcasts** — HITL handshake
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| incident_id | UUID | FK to incidents |
+| institute_id | UUID | FK to institutes |
+| status | TEXT | pending, accepted, rejected |
+| confidence | FLOAT | Match confidence score |
 
 ---
 
-## Karachi Landmarks (Geocoding)
-
-| Landmark | Zone | Coordinates |
-|----------|------|------------|
-| Moti Mahal | Gulshan | 24.9204, 67.0932 |
-| Lucky One Mall | FB Area | 24.9312, 67.0901 |
-| Do Darya | DHA | 24.7981, 67.0645 |
-| Nipa Chowrangi | Gulshan | 24.9175, 67.0972 |
-| Nursery | PECHS | 24.8615, 67.0542 |
-| Clifton Bridge | Clifton | 24.8206, 67.0305 |
-| Tariq Road | PECHS | 24.8690, 67.0649 |
-| Saddar | Saddar | 24.8607, 67.0100 |
-| Korangi Crossing | Korangi | 24.8320, 67.1270 |
-| North Nazimabad | North Nazimabad | 24.9420, 67.0350 |
-
----
-
-## API Routes
+## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/ai/parse-incident` | POST | Groq LLM parses transcript into structured incident data |
-| `/api/agent/trigger` | POST | Creates incident + runs LangGraph pipeline (text/demo path) |
-| `/api/agent/respond` | POST | Institution accepts/rejects broadcast (HITL resume) |
-| `/api/dispatch` | POST | Institution dispatches ambulance (assigns resource + simulation) |
-| `/api/demo/trigger` | POST | One-click demo with random Karachi emergency scenario |
-| `/api/simulate` | POST | LERP ambulance movement simulation (25 steps, 2s each) |
-| `/api/vapi/webhook` | POST | Vapi tool-call handler (creates incident from voice conversation) |
+| `/api/voice/chat` | POST | Send audio → Whisper STT → LLM → response text |
+| `/api/ai/parse-incident` | POST | Groq LLM parses transcript → structured incident data |
+| `/api/agent/trigger` | POST | Create incident + run LangGraph pipeline |
+| `/api/agent/respond` | POST | Institution accept/reject (HITL) |
+| `/api/dispatch` | POST | Assign ambulance + calculate OSRM route |
+| `/api/simulate/step` | POST | Advance ambulance one waypoint |
+| `/api/demo/trigger` | POST | Random Karachi emergency scenario |
 
 ---
 
 ## Incident Lifecycle
 
 ```
-intake -> geocoded -> broadcasting -> accepted -> dispatched -> resolved
-                        |                ^
-                        |   REJECT       |
-                        +-> (next inst) -+
+intake → geocoded → broadcasting → accepted → en_route → on_scene → resolved
+                       │                ▲
+                       │   REJECT        │
+                       └──► next inst ──►┘
 ```
 
 | Status | Trigger | What Happens |
 |--------|---------|-------------|
-| `intake` | Civilian submits / AI calls tool | Groq LLM parses transcript |
-| `geocoded` | Landmark matched | Location resolved to coordinates |
+| `intake` | Civilian submits | Groq LLM parses transcript |
+| `geocoded` | Landmark matched | Coordinates resolved (landmark or GPS) |
 | `broadcasting` | Institute found | Broadcast sent, institution dashboard rings |
-| `accepted` | Institution clicks ACCEPT | Civilian notified, Dispatch button appears |
-| `dispatched` | Institution clicks DISPATCH AMBULANCE | Resource assigned, simulation starts |
-| `resolved` | Manual | Incident closed |
+| `accepted` | Institution clicks ACCEPT | Voice chat auto-connects |
+| `en_route` | Institution clicks DISPATCH | OSRM route calculated, ambulance starts moving |
+| `on_scene` | Ambulance arrives | Simulation complete |
+| `resolved` | Manually dismissed | Resources freed, incident cleared |
 
 ---
 
-## Simulation Engine
+## Concurrency Model
 
-`src/lib/simulation.ts` -- LERP-based ambulance movement:
+### Broadcast Queue
+```
+Call 1 arrives → popup shows (dispatcher free)
+  ACCEPT → isBusy = true, popup dismissed
+Call 2 arrives → QUEUED silently ("1 Waiting" badge)
+Call 3 arrives → QUEUED ("2 Waiting" badge pulses)
+Call 1 resolved → isBusy = false → Call 2 popup shows
+Call 2 resolved → Call 3 popup shows
+```
 
-- **Steps**: 25 increments
-- **Interval**: 2000ms per step
-- **Total**: ~50 seconds transit time
-- **Updates**: Writes `lat/lng` to Supabase `resources` table each tick
-- **Realtime**: Both maps update via Supabase Realtime subscriptions
-- **Status**: `dispatched` -> `en_route` -> `on_scene`
+### Multiple Ambulance Simulation
+- Each ambulance runs independently via client-side polling
+- `/api/simulate/step` advances one ambulance one waypoint per call
+- Dashboard runs `setInterval(2s)` per `en_route` incident
+- No server-side long-running processes — fully stateless
+
+---
+
+## Karachi Landmarks (Geocoding)
+
+10 hardcoded landmarks with exact coordinates:
+
+| Landmark | Zone | Lat | Lng |
+|----------|------|-----|-----|
+| Moti Mahal | Gulshan | 24.9204 | 67.0932 |
+| Lucky One Mall | FB Area | 24.9312 | 67.0901 |
+| Do Darya | DHA | 24.7981 | 67.0645 |
+| Nipa Chowrangi | Gulshan | 24.9175 | 67.0972 |
+| Nursery | PECHS | 24.8615 | 67.0542 |
+| Clifton Bridge | Clifton | 24.8206 | 67.0305 |
+| Tariq Road | PECHS | 24.8690 | 67.0649 |
+| Saddar | Saddar | 24.8607 | 67.0100 |
+| Korangi Crossing | Korangi | 24.8320 | 67.1270 |
+| North Nazimabad | North Nazimabad | 24.9420 | 67.0350 |
+
+Falls back to browser GPS coordinates when no landmark matches.
 
 ---
 
 ## Setup
 
 ### 1. Install
-
 ```bash
 cd guardian
 npm install --legacy-peer-deps
 ```
 
 ### 2. Supabase
-
 1. Create a Supabase project
-2. Run `supabase/schema.sql` in the SQL Editor
-3. Enable Realtime for: `incidents`, `incident_broadcasts`, `resources`
+2. Run `supabase/schema_v2.sql` in SQL Editor
+3. Run `supabase/add_route_columns.sql` in SQL Editor
+4. Ensure Realtime is enabled for: `incidents`, `incident_broadcasts`, `resources`
 
 ### 3. Environment Variables
-
 `.env.local`:
-
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-
 GROQ_API_KEY=your_groq_api_key
-
-NEXT_PUBLIC_VAPI_PUBLIC_KEY=your_vapi_public_key
-NEXT_PUBLIC_VAPI_ASSISTANT_ID=your_vapi_assistant_id
-VAPI_SERVER_SECRET=your_vapi_server_secret
 ```
 
-### 4. Vapi Assistant
-
-In the Vapi dashboard:
-- Add tool `report_incident` with params: `landmark`, `incident_type`, `severity`, `summary`, `transcript`
-- Set Server URL to `https://your-domain/api/vapi/webhook` (use `npx ngrok http 3000` for local)
-- Configure system prompt (see Vapi prompt docs in project)
-
-### 5. Run
-
+### 4. Run
 ```bash
 npm run dev
 ```
@@ -247,15 +343,18 @@ npm run dev
 |------|-----|
 | Landing | http://localhost:3000 |
 | Civilian SOS | http://localhost:3000/civilian |
-| Institution Dashboard | http://localhost:3000/institution/dashboard |
+| War Room | http://localhost:3000/institution/dashboard |
+
+### 5. Reset Data
+Run `supabase/reset.sql` in SQL Editor to clear all incidents and reset ambulances to station.
 
 ---
 
-## Demo Mode
+## Demo
 
-Click **Demo** (bottom of civilian page) to trigger a random emergency without Vapi. Uses Groq AI + full LangGraph pipeline.
+Click **Demo** (bottom of civilian page) to trigger a random Karachi emergency without voice input.
 
-5 scenarios (Roman Urdu):
+5 scenarios in Roman Urdu:
 - Road accident at Nipa Chowrangi
 - Medical emergency at Moti Mahal
 - Bike accident near Lucky One Mall
@@ -264,32 +363,26 @@ Click **Demo** (bottom of civilian page) to trigger a random emergency without V
 
 ---
 
-## Zustand Stores
+## What Makes This Different
 
-### WaastaStore (Civilian)
-```
-agentStatus: idle | listening | analyzing | broadcasting | accepted | dispatched
-transcript, incidentId, incident, assignedResource, eta
-```
-
-### InstitutionStore
-```
-activeBroadcast (with nested incident data)
-incidents[]
-```
+| Feature | Traditional 1122/911 | Waasta |
+|---------|----------------------|--------|
+| Response time | Minutes to route | < 30 seconds AI triage |
+| Language | Operator must understand | AI understands Urdu/Roman Urdu/English |
+| Dispatch | Manual radio coordination | Automated nearest-ambulance selection |
+| Tracking | No visibility | Real-time map with OSRM road routes |
+| Concurrency | One call at a time | Queue system with priority |
+| Cost | Expensive call centers | $0 AI pipeline (Groq free tier) |
+| Voice | Phone lines (GSM) | WebRTC (browser, no phone needed) |
 
 ---
 
-## Key Files to Modify
+## Team
 
-| To change... | Edit |
-|-------------|------|
-| AI conversation behavior | Vapi dashboard system prompt |
-| Karachi landmarks | `src/lib/constants.ts` |
-| Transcript parsing | `src/app/api/ai/parse-incident/route.ts` |
-| Dispatch logic | `src/app/api/dispatch/route.ts` |
-| Simulation speed | `src/lib/simulation.ts` (intervalMs, steps) |
-| Map appearance | `src/components/maps/WaastaMap.tsx` |
-| Civilian UI | `src/app/civilian/page.tsx` |
-| Institution UI | `src/app/institution/dashboard/page.tsx` |
-| Database schema | `supabase/schema.sql` |
+Built during [Hackathon Name] — 15-hour sprint.
+
+---
+
+## License
+
+MIT

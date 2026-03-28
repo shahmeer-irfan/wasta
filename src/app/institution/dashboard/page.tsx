@@ -123,14 +123,15 @@ export default function InstitutionDashboard() {
 
       console.log('[DASHBOARD] Pending broadcasts:', pendingBroadcasts?.length ?? 0);
       if (pendingBroadcasts?.length) {
-        const b = pendingBroadcasts[0];
-        const inc = (b as Record<string, unknown>).incidents;
-        console.log('[DASHBOARD] Opening popup for pending broadcast:', b.id?.substring(0,8), 'incident:', inc ? 'found' : 'NULL');
-        if (inc) {
-          store.setActiveBroadcast({
-            ...b,
-            incidents: inc as Incident,
-          });
+        // Queue all pending broadcasts — first one shows, rest queued
+        for (const b of pendingBroadcasts) {
+          const inc = (b as Record<string, unknown>).incidents;
+          if (inc) {
+            store.queueBroadcast({
+              ...b,
+              incidents: inc as Incident,
+            });
+          }
         }
       }
     }
@@ -167,7 +168,8 @@ export default function InstitutionDashboard() {
           console.log('[DASHBOARD] Incident for broadcast:', incident?.id?.substring(0, 8), incident?.status);
 
           if (incident) {
-            store.setActiveBroadcast({
+            // Queue instead of showing immediately — respects busy state
+            store.queueBroadcast({
               ...broadcast,
               incidents: incident as Incident,
             });
@@ -289,6 +291,11 @@ export default function InstitutionDashboard() {
           decision,
         }),
       });
+
+      if (decision === 'ACCEPT') {
+        // Mark busy — suppress new popups until this call is done
+        store.setBusy(true);
+      }
       store.clearBroadcast();
     } catch (err) {
       console.error('Response failed:', err);
@@ -393,6 +400,18 @@ export default function InstitutionDashboard() {
             <Radio className="w-3.5 h-3.5 text-amber-600" />
             <span className="text-[11px] font-bold text-amber-700">{dispatchedCount} Disp</span>
           </div>
+          {/* Queued calls indicator */}
+          {store.broadcastQueue.length > 0 && (
+            <motion.div
+              initial={{ scale: 0.8 }}
+              animate={{ scale: [1, 1.1, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-50 border border-red-200"
+            >
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-[11px] font-bold text-red-700">{store.broadcastQueue.length} Waiting</span>
+            </motion.div>
+          )}
         </div>
       </div>
 
@@ -453,6 +472,37 @@ export default function InstitutionDashboard() {
               {activeIncidents.length}
             </span>
           </div>
+
+          {/* Queued calls waiting */}
+          {store.broadcastQueue.length > 0 && (
+            <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <motion.div
+                    className="w-2 h-2 rounded-full bg-red-500"
+                    animate={{ scale: [1, 1.3, 1] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  />
+                  <span className="text-[10px] font-bold text-red-700 uppercase tracking-wider">
+                    {store.broadcastQueue.length} Call{store.broadcastQueue.length > 1 ? 's' : ''} Waiting
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {store.broadcastQueue.map((b, i) => (
+                  <div key={b.id || i} className="flex items-center gap-2 text-[10px] text-red-600">
+                    <span className="w-4 h-4 rounded-full bg-red-100 flex items-center justify-center text-[8px] font-bold">{i + 1}</span>
+                    <span className="truncate">
+                      {b.incidents?.incident_type || 'Emergency'} — {b.incidents?.landmark || 'Unknown'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[9px] text-red-400 mt-1.5">
+                AI civilian ko hold pe rakh raha hai. Finish current call to accept next.
+              </p>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
             <AnimatePresence initial={false}>
@@ -595,8 +645,13 @@ export default function InstitutionDashboard() {
                             // Delete from broadcasts and incidents tables completely
                             await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
                             await supabase.from('incidents').delete().eq('id', incident.id);
-                            // Remove from local state
+                            // Remove from local state + clear busy (show next queued broadcast)
                             setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
+                            store.setBusy(false);
+                            // If there are queued broadcasts, promote next
+                            if (store.broadcastQueue?.length > 0) {
+                              store.clearBroadcast();
+                            }
                           }}
                           className="text-[9px] text-zinc-400 hover:text-red-500 transition-colors ml-1 px-1.5 py-0.5 rounded hover:bg-red-50"
                           title="Mark as resolved"
@@ -653,6 +708,7 @@ export default function InstitutionDashboard() {
                           await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
                           await supabase.from('incidents').delete().eq('id', incident.id);
                           setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
+                          store.setBusy(false);
                         }
                       }}
                       className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
