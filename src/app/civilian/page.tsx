@@ -692,13 +692,13 @@ export default function CivilianPage() {
               </div>
             </div>
 
-      {/* Voice chat — only after institution accepted */}
-      {store.incidentId && store.incident?.accepted_by && (
+      {/* Voice chat — available as soon as incident exists */}
+      {store.incidentId && (
         <div className="px-4 py-2 border-t border-orange-200/30 bg-white/95 backdrop-blur-sm">
           <VoiceChat
             incidentId={store.incidentId}
             role="civilian"
-            peerLabel={institute?.name || 'Responder'}
+            peerLabel={institute?.name || 'Rescue Team'}
           />
         </div>
       )}

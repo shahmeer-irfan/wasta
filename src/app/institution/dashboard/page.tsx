@@ -418,8 +418,8 @@ export default function InstitutionDashboard() {
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     onClick={async () => {
                       setSelectedIncident(isSelected ? null : incident.id);
-                      // If broadcasting, open accept modal on click
-                      if (incident.status === 'broadcasting' && !store.activeBroadcast) {
+                      // Open accept modal for any incident with a pending broadcast
+                      if (!store.activeBroadcast && ['broadcasting', 'intake', 'geocoded'].includes(incident.status)) {
                         const { data: bc } = await supabase
                           .from('incident_broadcasts')
                           .select('*')
@@ -497,18 +497,28 @@ export default function InstitutionDashboard() {
                         </div>
                       ) : null}
 
-                      {/* Summary — expanded view */}
+                      {/* Summary + Call button — expanded view */}
                       <AnimatePresence>
-                        {isSelected && incident.summary && (
+                        {isSelected && (
                           <motion.div
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
                             className="overflow-hidden"
                           >
-                            <p className="text-xs text-zinc-600 leading-relaxed italic mb-2 bg-orange-100/40 rounded-lg p-2.5 border border-orange-200/30">
-                              &ldquo;{incident.summary}&rdquo;
-                            </p>
+                            {incident.summary && (
+                              <p className="text-xs text-zinc-600 leading-relaxed italic mb-2 bg-orange-100/40 rounded-lg p-2.5 border border-orange-200/30">
+                                &ldquo;{incident.summary}&rdquo;
+                              </p>
+                            )}
+                            {/* Quick call button — connect to civilian directly */}
+                            <div className="mb-2" onClick={(e) => e.stopPropagation()}>
+                              <VoiceChat
+                                incidentId={incident.id}
+                                role="institution"
+                                peerLabel="Civilian"
+                              />
+                            </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
