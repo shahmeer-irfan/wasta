@@ -78,7 +78,11 @@ export default function TrackingSheet({
               </motion.div>
               <div className="text-[10px] text-gray-500 flex items-center gap-1 justify-end">
                 <Clock className="w-3 h-3" />
-                {incident.route_distance_km}km
+                {Math.max(0, Math.round(
+                  (incident.route_distance_km ?? 0) *
+                  (1 - (incident.route_progress_step ?? 0) /
+                    Math.max(1, (incident.route_waypoints?.length ?? 1) - 1))
+                * 10) / 10)}km away
               </div>
             </div>
           ) : eta !== null ? (

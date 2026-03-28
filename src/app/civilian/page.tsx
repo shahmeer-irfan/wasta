@@ -652,6 +652,8 @@ export default function CivilianPage() {
                   lng: store.incident.lng,
                 } : null}
                 zoom={14}
+                routeWaypoints={store.incident?.route_waypoints}
+                routeProgressStep={store.incident?.route_progress_step}
               />
 
         {/* Top overlay */}
@@ -689,6 +691,17 @@ export default function CivilianPage() {
                 )}
               </div>
             </div>
+
+      {/* Voice chat — only after institution accepted */}
+      {store.incidentId && store.incident?.accepted_by && (
+        <div className="px-4 py-2 border-t border-orange-200/30 bg-white/95 backdrop-blur-sm">
+          <VoiceChat
+            incidentId={store.incidentId}
+            role="civilian"
+            peerLabel={institute?.name || 'Responder'}
+          />
+        </div>
+      )}
 
       {/* Bottom tracking sheet */}
       {store.incident && (

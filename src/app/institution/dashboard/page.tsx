@@ -642,12 +642,11 @@ export default function InstitutionDashboard() {
                     </span>
                   </div>
 
-                  {/* Voice chat — only for the active incident */}
+                  {/* Voice chat — user clicks to connect */}
                   <VoiceChat
                     incidentId={dispatchable.id}
                     role="institution"
                     peerLabel="Civilian"
-                    autoConnect
                   />
 
                   {!isDispatched ? (
