@@ -121,9 +121,11 @@ export default function InstitutionDashboard() {
         .order('sent_at', { ascending: false })
         .limit(1);
 
+      console.log('[DASHBOARD] Pending broadcasts:', pendingBroadcasts?.length ?? 0);
       if (pendingBroadcasts?.length) {
         const b = pendingBroadcasts[0];
         const inc = (b as Record<string, unknown>).incidents;
+        console.log('[DASHBOARD] Opening popup for pending broadcast:', b.id?.substring(0,8), 'incident:', inc ? 'found' : 'NULL');
         if (inc) {
           store.setActiveBroadcast({
             ...b,
