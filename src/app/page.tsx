@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { Display, MonoTag, Eyebrow } from '@/components/ui/typography';
+import { MonoTag, Eyebrow } from '@/components/ui/typography';
 
 const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
   ssr: false,

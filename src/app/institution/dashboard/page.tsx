@@ -376,13 +376,13 @@ export default function InstitutionDashboard() {
 
         <div className="flex items-center gap-5">
           <LiveDot isInk={isInk} />
-          <PillCounter icon={<Ambulance className="h-3 w-3" />} value={availableCount} label="AVAIL" tone="ok" isInk={isInk} />
-          <PillCounter icon={<Radio className="h-3 w-3" />}    value={dispatchedCount} label="DISP" tone="action" isInk={isInk} />
+          <PillCounter icon={<Ambulance className="h-3 w-3" />} value={availableCount} label="AVAIL" tone="ok" />
+          <PillCounter icon={<Radio className="h-3 w-3" />}    value={dispatchedCount} label="DISP" tone="action" />
           {store.broadcastQueue.length > 0 && (
             <PillCounter
               icon={<motion.span animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 1, repeat: Infinity }}
                 className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--action)' }} />}
-              value={store.broadcastQueue.length} label="WAITING" tone="alert" isInk={isInk}
+              value={store.broadcastQueue.length} label="WAITING" tone="alert"
             />
           )}
           <ThemeToggle isInk={isInk} onClick={toggleTheme} />
@@ -626,10 +626,10 @@ function LiveDot({ isInk }: { isInk: boolean }) {
 }
 
 function PillCounter({
-  icon, value, label, tone, isInk,
+  icon, value, label, tone,
 }: {
   icon: React.ReactNode; value: number; label: string;
-  tone: 'ok' | 'action' | 'alert'; isInk: boolean;
+  tone: 'ok' | 'action' | 'alert';
 }) {
   const colors = {
     ok:     { fg: 'var(--status-ok)',    bg: 'rgba(95,161,115,0.10)' },

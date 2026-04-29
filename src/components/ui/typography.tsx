@@ -36,11 +36,12 @@ export function Display({
 // Mono-tagged identifier — call signs, IDs, coords, ETAs
 // ============================================================
 export function MonoTag({
-  children, className, size = 'sm',
+  children, className, size = 'sm', style,
 }: {
   children: React.ReactNode;
   className?: string;
   size?: 'xs' | 'sm' | 'md';
+  style?: React.CSSProperties;
 }) {
   const sizes = {
     xs: 'text-[9.5px] tracking-[0.08em]',
@@ -48,7 +49,7 @@ export function MonoTag({
     md: 'text-[12px] tracking-[0.04em]',
   };
   return (
-    <span className={cn('font-mono-tabular uppercase', sizes[size], className)}>
+    <span className={cn('font-mono-tabular uppercase', sizes[size], className)} style={style}>
       {children}
     </span>
   );
