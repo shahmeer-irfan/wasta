@@ -1,138 +1,140 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Activity, Radio, MapPin, Clock, Ambulance,
-  Flame, AlertTriangle, Car, Heart, HelpCircle, Loader2, ChevronLeft, RefreshCw,
-  Hospital, Warehouse
+  Radio, Ambulance, Flame, AlertTriangle, Car, Heart, HelpCircle,
+  ChevronLeft, RefreshCw, Sun, Moon,
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import BroadcastModal from '@/components/institution/BroadcastModal';
 import VoiceChat from '@/components/shared/VoiceChat';
 import { useInstitutionStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
-import { SEVERITY_COLORS, SEVERITY_LABELS } from '@/lib/constants';
+import { useDashboardTheme } from '@/lib/theme';
+import { cn } from '@/lib/utils';
+import {
+  Display, MonoTag, Eyebrow, StatusUnderline, SeverityBars,
+} from '@/components/ui/typography';
 import type { MapMarker } from '@/components/maps/WaastaMap';
-import type { Incident, IncidentBroadcast, Institute, Resource } from '@/types';
+import type { Incident, IncidentBroadcast, Institute, Resource, SearchTrace } from '@/types';
 
 const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
   ssr: false,
-  loading: () => <div className="h-full w-full bg-orange-50 animate-pulse" />,
+  loading: () => <div className="h-full w-full bg-[color:var(--ink-bg)] animate-pulse" />,
 });
 
 const DEMO_INSTITUTE_ID_KEY = 'waasta_institute_id';
 
-// Icon map for incident types
 const INCIDENT_ICONS: Record<string, React.ReactNode> = {
-  accident:  <Car className="w-3.5 h-3.5" />,
-  fire:      <Flame className="w-3.5 h-3.5" />,
-  medical:   <Heart className="w-3.5 h-3.5" />,
-  crime:     <AlertTriangle className="w-3.5 h-3.5" />,
-  other:     <HelpCircle className="w-3.5 h-3.5" />,
+  accident: <Car className="h-3.5 w-3.5" />,
+  fire:     <Flame className="h-3.5 w-3.5" />,
+  medical:  <Heart className="h-3.5 w-3.5" />,
+  crime:    <AlertTriangle className="h-3.5 w-3.5" />,
+  other:    <HelpCircle className="h-3.5 w-3.5" />,
 };
 
-// Human-readable status labels + colors
-const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  intake:       { label: 'Processing', cls: 'text-blue-400 border-blue-600/30 bg-blue-600/10' },
-  geocoded:     { label: 'Located',    cls: 'text-cyan-400 border-cyan-600/30 bg-cyan-600/10' },
-  broadcasting: { label: 'Alerting',   cls: 'text-amber-400 border-amber-600/30 bg-amber-600/10' },
-  accepted:     { label: 'Accepted',   cls: 'text-emerald-400 border-emerald-600/30 bg-emerald-600/10' },
-  dispatched:   { label: 'Dispatched', cls: 'text-green-400 border-green-600/30 bg-green-600/10' },
-  resolved:     { label: 'Resolved',   cls: 'text-zinc-600 border-orange-300/30 bg-zinc-600/10' },
-  cancelled:    { label: 'Cancelled',  cls: 'text-zinc-500 border-orange-200/30 bg-orange-100/10' },
+const STATUS_KIND: Record<string, 'ok' | 'route' | 'alert' | 'amber' | 'action' | 'neutral'> = {
+  intake: 'route',
+  geocoded: 'route',
+  broadcasting: 'amber',
+  accepted: 'ok',
+  dispatched: 'action',
+  en_route: 'action',
+  on_scene: 'ok',
+  returning: 'route',
+  resolved: 'neutral',
+  cancelled: 'neutral',
 };
+
+const STATUS_LABEL: Record<string, string> = {
+  intake: 'Processing',
+  geocoded: 'Located',
+  broadcasting: 'Alerting',
+  accepted: 'Accepted',
+  dispatched: 'Dispatched',
+  en_route: 'En Route',
+  on_scene: 'On Scene',
+  returning: 'Returning',
+  resolved: 'Resolved',
+  cancelled: 'Cancelled',
+};
+
+const ROUTE_DISPLAY_STATUSES = new Set(['dispatched', 'en_route', 'on_scene']);
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m ago`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+function mergeIncident(prev: Incident, patch: Partial<Incident> & { id: string }): Incident {
+  const next: Incident = { ...prev, ...patch } as Incident;
+  if (patch.route_waypoints == null) next.route_waypoints = prev.route_waypoints;
+  return next;
 }
 
 export default function InstitutionDashboard() {
   const store = useInstitutionStore();
+  const { theme, toggle: toggleTheme } = useDashboardTheme();
   const [instituteId, setInstituteId] = useState<string | null>(null);
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [resources, setResources] = useState<Resource[]>([]);
   const [allIncidents, setAllIncidents] = useState<Incident[]>([]);
   const [isResponding, setIsResponding] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
-  const [, setTick] = useState(0); // for live time updates
+  const [, setTick] = useState(0);
 
-  // Refresh relative timestamps every 30s
+  const isInk = theme === 'ink';
+
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30000);
     return () => clearInterval(id);
   }, []);
 
-  // Initialize — always fetch fresh institute from DB
+  // Initialize institute
   useEffect(() => {
     async function init() {
       const { data, error } = await supabase
-        .from('institutes')
-        .select('*')
-        .eq('is_available', true)
-        .limit(1)
-        .single();
+        .from('institutes').select('*')
+        .eq('is_available', true).limit(1).single();
 
       console.log('[DASHBOARD] Institute fetch:', data?.name || 'NONE', error?.message || '');
-
       if (data) {
         localStorage.setItem(DEMO_INSTITUTE_ID_KEY, data.id);
         setInstitute(data as Institute);
         setInstituteId(data.id);
-        console.log('[DASHBOARD] Institute ID set:', data.id.substring(0, 8));
-      } else {
-        console.error('[DASHBOARD] No institute found! Run schema_v2.sql in Supabase.');
       }
     }
     init();
   }, []);
 
-  // Fetch resources and active incidents
+  // Fetch resources + incidents
   useEffect(() => {
     if (!instituteId) return;
-
     async function fetchData() {
       const [resRes, incRes] = await Promise.all([
         supabase.from('resources').select('*').eq('institute_id', instituteId!),
-        supabase
-          .from('incidents')
-          .select('*')
+        supabase.from('incidents').select('*')
           .not('status', 'in', '("resolved","cancelled")')
-          .order('created_at', { ascending: false })
-          .limit(20),
+          .order('created_at', { ascending: false }).limit(20),
       ]);
-
       if (resRes.data) setResources(resRes.data as Resource[]);
       if (incRes.data) setAllIncidents(incRes.data as Incident[]);
 
-      // Check for any PENDING broadcasts that already exist (page loaded late)
       const { data: pendingBroadcasts } = await supabase
-        .from('incident_broadcasts')
-        .select('*, incidents(*)')
-        .eq('institute_id', instituteId!)
-        .eq('status', 'pending')
-        .order('sent_at', { ascending: false })
-        .limit(1);
+        .from('incident_broadcasts').select('*, incidents(*)')
+        .eq('institute_id', instituteId!).eq('status', 'pending')
+        .order('sent_at', { ascending: false }).limit(1);
 
-      console.log('[DASHBOARD] Pending broadcasts:', pendingBroadcasts?.length ?? 0);
       if (pendingBroadcasts?.length) {
-        // Queue all pending broadcasts — first one shows, rest queued
         for (const b of pendingBroadcasts) {
           const inc = (b as Record<string, unknown>).incidents;
-          if (inc) {
-            store.queueBroadcast({
-              ...b,
-              incidents: inc as Incident,
-            });
-          }
+          if (inc) store.queueBroadcast({ ...b, incidents: inc as Incident });
         }
       }
     }
@@ -140,210 +142,139 @@ export default function InstitutionDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instituteId]);
 
-  // Listen for new broadcasts targeting this institute
+  // Realtime: new broadcasts
   useEffect(() => {
     if (!instituteId) return;
-
-    console.log('[DASHBOARD] Subscribing to broadcasts for institute:', instituteId.substring(0, 8));
-
     const channel = supabase
       .channel(`broadcasts-${instituteId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'incident_broadcasts',
-          filter: `institute_id=eq.${instituteId}`,
-        },
-        async (payload) => {
-          console.log('[DASHBOARD] ★ NEW BROADCAST received!', payload.new);
-          const broadcast = payload.new as IncidentBroadcast;
-
-          const { data: incident } = await supabase
-            .from('incidents')
-            .select('*')
-            .eq('id', broadcast.incident_id)
-            .single();
-
-          console.log('[DASHBOARD] Incident for broadcast:', incident?.id?.substring(0, 8), incident?.status);
-
-          if (incident) {
-            // Queue instead of showing immediately — respects busy state
-            store.queueBroadcast({
-              ...broadcast,
-              incidents: incident as Incident,
-            });
-          }
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'incident_broadcasts',
+        filter: `institute_id=eq.${instituteId}`,
+      }, async (payload) => {
+        const broadcast = payload.new as IncidentBroadcast;
+        const { data: incident } = await supabase
+          .from('incidents').select('*').eq('id', broadcast.incident_id).single();
+        if (incident) {
+          store.queueBroadcast({ ...broadcast, incidents: incident as Incident });
         }
-      )
+      })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instituteId]);
 
-  // Listen for resource updates
+  // Realtime: resources
   useEffect(() => {
     if (!instituteId) return;
-
     const channel = supabase
       .channel(`inst-resources-${instituteId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'resources' },
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'resources' },
         (payload) => {
           const updated = payload.new as Resource;
-          setResources((prev) =>
-            prev.map((r) => (r.id === updated.id ? updated : r))
-          );
-        }
-      )
+          setResources((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+        })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [instituteId]);
 
-  // Listen for all incident changes
+  // Realtime: incidents (with merge for TOAST)
   useEffect(() => {
     const channel = supabase
       .channel('all-incidents-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'incidents' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setAllIncidents((prev) => [payload.new as Incident, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
+            const incoming = payload.new as Incident;
             setAllIncidents((prev) =>
-              prev.map((i) =>
-                i.id === (payload.new as Incident).id ? (payload.new as Incident) : i
-              )
-            );
+              prev.some((i) => i.id === incoming.id) ? prev : [incoming, ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            const incoming = payload.new as Partial<Incident> & { id: string };
+            setAllIncidents((prev) =>
+              prev.map((i) => (i.id === incoming.id ? mergeIncident(i, incoming) : i)));
+          } else if (payload.eventType === 'DELETE') {
+            const removed = payload.old as { id: string };
+            setAllIncidents((prev) => prev.filter((i) => i.id !== removed.id));
           }
-        }
-      )
+        })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Listen for resource changes (crucial for map movement and status labels)
+  // Resource updates
   useEffect(() => {
     const channel = supabase
       .channel('resource-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'resources' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'resources' },
         (payload) => {
           if (payload.eventType === 'UPDATE') {
             setResources((prev) =>
-              prev.map((r) =>
-                r.id === (payload.new as Resource).id ? (payload.new as Resource) : r
-              )
-            );
+              prev.map((r) => (r.id === (payload.new as Resource).id
+                ? (payload.new as Resource) : r)));
           }
-        }
-      )
+        })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // ── Client-side simulation driver ─────────────────────────
-  // Polls /api/simulate/step every 2s for each en_route incident
+  // Simulation drivers (unchanged)
   useEffect(() => {
-    const enRouteIncidents = allIncidents.filter(i => i.status === 'en_route' && i.assigned_resource);
-    if (enRouteIncidents.length === 0) return;
-
-    const intervals = enRouteIncidents.map(incident => {
-      return setInterval(async () => {
+    const enRoute = allIncidents.filter((i) => i.status === 'en_route' && i.assigned_resource);
+    if (enRoute.length === 0) return;
+    const intervals = enRoute.map((incident) =>
+      setInterval(async () => {
         try {
-          const res = await fetch('/api/simulate/step', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          await fetch('/api/simulate/step', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ incident_id: incident.id }),
           });
-          const data = await res.json();
-          if (data.done) {
-            // Will be picked up by incident realtime subscription
-            console.log(`[SIM] Incident ${incident.id.substring(0,8)} arrived: ${data.status}`);
-          }
-        } catch (err) {
-          console.error('[SIM] Step error:', err);
-        }
-      }, 800); // Fast for demo
-    });
-
+        } catch { /* ignore */ }
+      }, 800));
     return () => intervals.forEach(clearInterval);
   }, [allIncidents]);
 
-  // On-scene → wait 5s → start return trip
   useEffect(() => {
-    const onScene = allIncidents.filter(i => i.status === 'on_scene' && i.assigned_resource);
+    const onScene = allIncidents.filter((i) => i.status === 'on_scene' && i.assigned_resource);
     if (onScene.length === 0) return;
-
-    const timeouts = onScene.map(incident =>
+    const timeouts = onScene.map((incident) =>
       setTimeout(async () => {
-        console.log(`[SIM] ${incident.id.substring(0,8)} returning to station`);
         await fetch('/api/simulate/return', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ incident_id: incident.id }),
         });
-      }, 5000)
-    );
-
+      }, 5000));
     return () => timeouts.forEach(clearTimeout);
   }, [allIncidents]);
 
-  // Return trip → fast poll back to station
   useEffect(() => {
-    const returning = allIncidents.filter(i => i.status === 'returning' && i.assigned_resource);
+    const returning = allIncidents.filter((i) => i.status === 'returning' && i.assigned_resource);
     if (returning.length === 0) return;
-
-    const intervals = returning.map(incident =>
+    const intervals = returning.map((incident) =>
       setInterval(async () => {
         try {
           const res = await fetch('/api/simulate/return', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ incident_id: incident.id }),
           });
           const data = await res.json();
-          if (data.done) {
-            console.log(`[SIM] ${incident.id.substring(0,8)} back at station`);
-            store.finishCall();
-          }
+          if (data.done) store.finishCall();
         } catch { /* ignore */ }
-      }, 600) // Even faster return
-    );
-
+      }, 600));
     return () => intervals.forEach(clearInterval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allIncidents]);
 
-  // Handle accept/reject
   const handleResponse = useCallback(async (decision: 'ACCEPT' | 'REJECT') => {
     if (!store.activeBroadcast) return;
     setIsResponding(true);
-
     try {
       await fetch('/api/agent/respond', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          broadcast_id: store.activeBroadcast.id,
-          decision,
-        }),
-      }); 
-
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broadcast_id: store.activeBroadcast.id, decision }),
+      });
       if (decision === 'ACCEPT') {
-        // Stay busy — dismiss popup but DON'T show next queued call
         store.setBusy(true);
         store.dismissBroadcast();
       } else {
-        // REJECT — show next queued call immediately
         store.finishCall();
       }
     } catch (err) {
@@ -355,27 +286,21 @@ export default function InstitutionDashboard() {
 
   // Map markers
   const mapMarkers: MapMarker[] = [
-    ...allIncidents
-      .filter((i) => i.lat && i.lng)
-      .map((i) => ({
-        lat: i.lat!,
-        lng: i.lng!,
-        iconType: 'offline' as const,
-        iconName: 'incident' as const,
-        popup: `🚨 ${i.incident_type ?? 'Emergency'} @ ${i.landmark ?? 'Unknown'} [${i.status}]`,
-      })),
+    ...allIncidents.filter((i) => i.lat && i.lng).map((i) => ({
+      lat: i.lat!, lng: i.lng!,
+      iconType: 'offline' as const, iconName: 'incident' as const,
+      popup: `${i.incident_type ?? 'Emergency'} · ${i.landmark ?? '—'}`,
+    })),
     ...resources.map((r) => ({
-      lat: r.lat,
-      lng: r.lng,
-      iconType: (r.status === 'on_scene' ? 'arrived' 
-        : (['dispatched', 'en_route'].includes(r.status) ? 'deployed' 
-        : (r.status === 'available' ? 'active' : 'active'))) as 'arrived' | 'deployed' | 'active',
+      lat: r.lat, lng: r.lng,
+      iconType: (r.status === 'on_scene' ? 'arrived'
+        : (['dispatched', 'en_route'].includes(r.status) ? 'deployed'
+        : 'active')) as 'arrived' | 'deployed' | 'active',
       iconName: 'ambulance' as const,
-      popup: `${r.call_sign} — ${r.status}`,
+      popup: `${r.call_sign} · ${r.status}`,
     })),
     ...(institute ? [{
-      lat: institute.lat,
-      lng: institute.lng,
+      lat: institute.lat, lng: institute.lng,
       iconType: 'institute' as const,
       iconName: institute.type === 'ambulance' ? 'hospital' as const : 'station' as const,
       popup: institute.name,
@@ -383,28 +308,21 @@ export default function InstitutionDashboard() {
   ];
 
   const activeIncidents = allIncidents.filter(
-    (i) => !['resolved', 'cancelled'].includes(i.status)
-  );
+    (i) => !['resolved', 'cancelled'].includes(i.status));
   const availableCount = resources.filter((r) => r.status === 'available').length;
   const dispatchedCount = resources.filter((r) =>
-    ['dispatched', 'en_route'].includes(r.status)
-  ).length;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const selectedIncidentData = selectedIncident ? activeIncidents.find(i => i.id === selectedIncident) : null;
-
-  const onSceneCount = resources.filter(r => r.status === 'on_scene').length;
-
-  const statTiles = [
-    { label: 'Arrived', value: onSceneCount, color: '#16a34a', bg: '#f0fdf4' },
-    { label: 'Deployed', value: dispatchedCount, color: '#ea580c', bg: '#fff7ed' },
-    { label: 'Active', value: availableCount, color: '#2563eb', bg: '#eff6ff' },
-    { label: 'Offline', value: activeIncidents.length, color: '#dc2626', bg: '#fef2f2' },
-  ];
+    ['dispatched', 'en_route'].includes(r.status)).length;
+  const onSceneCount = resources.filter((r) => r.status === 'on_scene').length;
+  const offlineCount = activeIncidents.length;
 
   return (
-    <div className="h-screen w-screen bg-white flex flex-col overflow-hidden">
-      {/* Broadcast Modal — key forces fresh mount per broadcast */}
+    <div
+      className={cn(
+        'h-screen w-screen overflow-hidden flex flex-col',
+        isInk ? 'theme-ink surface-ink' : 'surface-paper',
+      )}
+    >
+      {/* Broadcast Modal */}
       <AnimatePresence mode="wait">
         {store.activeBroadcast && (
           <BroadcastModal
@@ -417,529 +335,765 @@ export default function InstitutionDashboard() {
         )}
       </AnimatePresence>
 
-      {/* ── Top Bar ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-6 h-14 border-b border-gray-200 bg-white shrink-0">
-        <div className="flex items-center gap-3">
-          <Link href="/">
-            <div className="w-8 h-8 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center hover:bg-orange-100 transition-colors cursor-pointer">
-              <ChevronLeft className="w-4 h-4 text-orange-600" />
-            </div>
+      {/* ── TOP BAR ───────────────────────────────────────────── */}
+      <header
+        className={cn(
+          'shrink-0 px-6 h-16 flex items-center justify-between border-b',
+          isInk ? 'border-[color:var(--ink-line)]' : 'border-[color:var(--paper-line)]',
+        )}
+      >
+        <div className="flex items-center gap-4">
+          <Link
+            href="/"
+            className={cn(
+              'flex h-8 w-8 items-center justify-center rounded-full border transition-colors',
+              isInk
+                ? 'border-[color:var(--ink-line)] hover:border-[color:var(--action)]'
+                : 'border-[color:var(--paper-line)] hover:border-[color:var(--action)]',
+            )}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
           </Link>
-          <div className="flex items-center gap-1.5 overflow-hidden">
-            <Image src="/logoBackgroundRemoved.png" alt="Waasta" width={32} height={32} className="object-contain" priority />
-          </div>
-          <div className="ml-[-4px]">
-            <h1 className="text-lg font-black bg-clip-text text-transparent bg-gradient-to-br from-orange-600 to-orange-400 tracking-tight leading-none">
-              WAASTA
-            </h1>
-            <p className="text-[11px] text-gray-400 mt-0.5">
-              {institute ? `${institute.name} · ${institute.zone}` : 'Loading...'}
-            </p>
+          <div className="flex items-center gap-2">
+            <div className="relative h-8 w-8">
+              <Image src="/logoBackgroundRemoved.png" alt="" fill sizes="32px" className="object-contain" priority />
+            </div>
+            <div className="leading-none">
+              <span
+                className="font-display text-[20px] font-semibold tracking-[-0.02em]"
+                style={{ fontVariationSettings: '"opsz" 96, "SOFT" 30' }}
+              >
+                Waasta
+              </span>
+              <div className="mt-1 flex items-center gap-2">
+                <MonoTag size="xs" className="opacity-55">
+                  {institute ? `${institute.name} · ${institute.zone}` : 'Loading…'}
+                </MonoTag>
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-5">
-          <div className="flex items-center gap-1.5">
-            <motion.div
-              className="w-[6px] h-[6px] rounded-full bg-emerald-500"
-              animate={{ opacity: [1, 0.3, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            />
-            <span className="text-[11px] font-semibold text-gray-500 tracking-wide">LIVE</span>
-          </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-50 border border-green-200">
-            <Ambulance className="w-3.5 h-3.5 text-green-600" />
-            <span className="text-[11px] font-bold text-green-700">{availableCount} Avail</span>
-          </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200">
-            <Radio className="w-3.5 h-3.5 text-amber-600" />
-            <span className="text-[11px] font-bold text-amber-700">{dispatchedCount} Disp</span>
-          </div>
-          {/* Queued calls indicator */}
+          <LiveDot isInk={isInk} />
+          <PillCounter icon={<Ambulance className="h-3 w-3" />} value={availableCount} label="AVAIL" tone="ok" isInk={isInk} />
+          <PillCounter icon={<Radio className="h-3 w-3" />}    value={dispatchedCount} label="DISP" tone="action" isInk={isInk} />
           {store.broadcastQueue.length > 0 && (
-            <motion.div
-              initial={{ scale: 0.8 }}
-              animate={{ scale: [1, 1.1, 1] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-50 border border-red-200"
-            >
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-[11px] font-bold text-red-700">{store.broadcastQueue.length} Waiting</span>
-            </motion.div>
+            <PillCounter
+              icon={<motion.span animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 1, repeat: Infinity }}
+                className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--action)' }} />}
+              value={store.broadcastQueue.length} label="WAITING" tone="alert" isInk={isInk}
+            />
           )}
+          <ThemeToggle isInk={isInk} onClick={toggleTheme} />
         </div>
+      </header>
+
+      {/* ── STATS TICKER STRIP (replaces 4-tile counters) ────── */}
+      <div
+        className={cn(
+          'shrink-0 px-6 py-3 border-b flex items-center gap-10 overflow-x-auto',
+          isInk ? 'border-[color:var(--ink-line)] bg-[color:var(--ink-bg-2)]/50'
+                : 'border-[color:var(--paper-line)] bg-[color:var(--paper-bg-2)]/50',
+        )}
+      >
+        <FidsStat n={onSceneCount}      label="ARRIVED"  color="var(--status-ok)"     />
+        <FidsSep isInk={isInk} />
+        <FidsStat n={dispatchedCount}   label="DEPLOYED" color="var(--action)"        />
+        <FidsSep isInk={isInk} />
+        <FidsStat n={availableCount}    label="ACTIVE"   color="var(--status-route)"  />
+        <FidsSep isInk={isInk} />
+        <FidsStat n={offlineCount}      label="OFFLINE"  color="var(--status-alert)"  />
       </div>
 
-      {/* ── Stats Bar ──────────────────────────────────────── */}
-      <div className="grid grid-cols-4 border-b border-gray-200 shrink-0">
-        {statTiles.map((tile, i) => (
-          <div key={tile.label} className={`flex items-center gap-3.5 px-5 py-3 bg-white ${i < 3 ? 'border-r border-gray-100' : ''}`}>
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tile.bg }}>
-              <div className="w-3.5 h-3.5 rounded-full" style={{ background: tile.color }} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold leading-none tabular-nums" style={{ color: tile.color }}>{tile.value}</div>
-              <div className="text-[10px] text-gray-400 mt-1 font-medium tracking-wide uppercase">{tile.label}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Main Content: Map + Sidebar (fixed grid) ─────────── */}
-      <div className="flex-1 grid grid-cols-[1fr_360px] overflow-hidden">
+      {/* ── MAIN GRID ─────────────────────────────────────── */}
+      <div className="flex-1 grid grid-cols-[1fr_380px] overflow-hidden">
         {/* Map */}
         <div className="relative overflow-hidden">
-          <WaastaMap
-            center={institute ? { lat: institute.lat, lng: institute.lng } : undefined}
-            markers={mapMarkers}
-            zoom={14}
-            routeWaypoints={(() => {
-              const d = activeIncidents.find(i => i.route_waypoints);
-              return d?.route_waypoints ?? null;
-            })()}
-            routeProgressStep={(() => {
-              const d = activeIncidents.find(i => i.route_waypoints);
-              return d?.route_progress_step ?? null;
-            })()}
-          />
-          <div className="absolute bottom-4 left-4 z-[1000] flex flex-col gap-1.5 bg-white/95 backdrop-blur-sm border border-orange-100 rounded-lg p-3 shadow-md">
-            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Legend</p>
-            {[
-              { color: '#16a34a', label: 'Arrived', icon: Ambulance },
-              { color: '#ea580c', label: 'Deployed', icon: Ambulance },
-              { color: '#2563eb', label: 'Active', icon: Ambulance },
-              { color: '#dc2626', label: 'Offline', icon: Activity, ping: true },
-              { color: '#27272a', label: institute?.type === 'ambulance' ? 'Hospital' : 'Station', icon: institute?.type === 'ambulance' ? Hospital : Warehouse },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center gap-2.5">
-                <div className="relative flex items-center justify-center">
-                  {item.ping && (
-                    <div className="absolute w-2.5 h-2.5 rounded-full bg-red-500 opacity-40 animate-ping" />
-                  )}
-                  <div className={`w-6 h-6 rounded-full shadow-sm flex items-center justify-center ${
-                    ['Arrived', 'Deployed', 'Active'].includes(item.label) 
-                      ? 'border-[5px] bg-opacity-20' 
-                      : 'border-2'
-                  }`} style={{ background: ['Arrived', 'Deployed', 'Active'].includes(item.label) ? `${item.color}33` : item.color, borderColor: ['Arrived', 'Deployed', 'Active'].includes(item.label) ? item.color : 'white' }}>
-                    {!['Arrived', 'Deployed', 'Active'].includes(item.label) && (
-                      <item.icon className="w-4 h-4 text-white" />
-                    )}
-                  </div>
-                </div>
-                <span className="text-[10px] text-gray-600 font-semibold">{item.label}</span>
-              </div>
-            ))}
+          {(() => {
+            const routedIncident = activeIncidents.find(
+              (i) => i.route_waypoints && ROUTE_DISPLAY_STATUSES.has(i.status));
+            return (
+              <WaastaMap
+                center={institute ? { lat: institute.lat, lng: institute.lng } : undefined}
+                markers={mapMarkers}
+                zoom={14}
+                theme={isInk ? 'ink' : 'light'}
+                routeWaypoints={routedIncident?.route_waypoints ?? null}
+                routeProgressStep={routedIncident?.route_progress_step ?? null}
+              />
+            );
+          })()}
+
+          {/* Map HUD chrome — corner ticks */}
+          <span aria-hidden className="pointer-events-none absolute left-2 top-2 h-3 w-3 border-l-2 border-t-2" style={{ borderColor: 'var(--action)' }} />
+          <span aria-hidden className="pointer-events-none absolute right-2 top-2 h-3 w-3 border-r-2 border-t-2" style={{ borderColor: 'var(--action)' }} />
+          <span aria-hidden className="pointer-events-none absolute bottom-2 left-2 h-3 w-3 border-b-2 border-l-2" style={{ borderColor: 'var(--action)' }} />
+          <span aria-hidden className="pointer-events-none absolute bottom-2 right-2 h-3 w-3 border-b-2 border-r-2" style={{ borderColor: 'var(--action)' }} />
+
+          {/* Top-left HUD — coords */}
+          <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--action)' }} />
+            <MonoTag size="xs" className={cn(isInk ? 'text-[color:var(--ink-fg-soft)]' : 'text-[color:var(--paper-ink-soft)]')}>
+              {institute
+                ? `LIVE · ${institute.lat.toFixed(3)}°N ${institute.lng.toFixed(3)}°E`
+                : 'LIVE · KARACHI'}
+            </MonoTag>
           </div>
+
+          {/* Bottom-left legend */}
+          <MapLegend isInk={isInk} institute={institute} />
         </div>
 
-        {/* ── Sidebar (fixed 360px, no drag) ──────────────────── */}
-        <div className="flex flex-col border-l border-gray-200 bg-gray-50 overflow-hidden">
-
-          <div className="px-4 py-3 pb-2 flex items-center justify-between shrink-0 bg-white">
-            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-              Active Incidents
-            </h2>
-            <span className="text-[10px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">
-              {activeIncidents.length}
+        {/* SIDEBAR */}
+        <aside
+          className={cn(
+            'flex flex-col border-l overflow-hidden',
+            isInk ? 'border-[color:var(--ink-line)] bg-[color:var(--ink-bg-2)]/40'
+                  : 'border-[color:var(--paper-line)] bg-[color:var(--paper-bg-2)]/40',
+          )}
+        >
+          {/* Sidebar header */}
+          <div className="flex shrink-0 items-baseline justify-between px-5 pt-5 pb-3">
+            <Eyebrow number={1}>Active Incidents</Eyebrow>
+            <span
+              className="font-display font-semibold tabular-nums"
+              style={{ fontSize: 22, lineHeight: 1, fontVariationSettings: '"opsz" 96' }}
+            >
+              {activeIncidents.length.toString().padStart(2, '0')}
             </span>
           </div>
 
-          {/* Queued calls waiting */}
+          {/* Queue notice */}
           {store.broadcastQueue.length > 0 && (
-            <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <motion.div
-                    className="w-2 h-2 rounded-full bg-red-500"
-                    animate={{ scale: [1, 1.3, 1] }}
-                    transition={{ duration: 1, repeat: Infinity }}
-                  />
-                  <span className="text-[10px] font-bold text-red-700 uppercase tracking-wider">
-                    {store.broadcastQueue.length} Call{store.broadcastQueue.length > 1 ? 's' : ''} Waiting
-                  </span>
-                </div>
+            <div
+              className={cn('mx-5 mb-3 px-3 py-2.5 border-l-2',
+                isInk ? 'border-[color:var(--action)] bg-[color:var(--ink-bg-3)]'
+                      : 'border-[color:var(--action)] bg-[color:var(--action)]/5')}
+            >
+              <div className="flex items-center gap-2">
+                <motion.span animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 1, repeat: Infinity }}
+                  className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--action)' }} />
+                <MonoTag size="xs" className="font-bold" style={{ color: 'var(--action)' }}>
+                  {store.broadcastQueue.length} WAITING
+                </MonoTag>
               </div>
-              <div className="space-y-1">
-                {store.broadcastQueue.map((b, i) => (
-                  <div key={b.id || i} className="flex items-center gap-2 text-[10px] text-red-600">
-                    <span className="w-4 h-4 rounded-full bg-red-100 flex items-center justify-center text-[8px] font-bold">{i + 1}</span>
-                    <span className="truncate">
-                      {b.incidents?.incident_type || 'Emergency'} — {b.incidents?.landmark || 'Unknown'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[9px] text-red-400 mt-1.5">
-                AI civilian ko hold pe rakh raha hai. Finish current call to accept next.
+              <p className="mt-1 text-[10.5px] leading-relaxed opacity-65">
+                AI civilian ko hold pe rakh raha hai · Finish current to accept next.
               </p>
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+          {/* Incident list */}
+          <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-3">
             <AnimatePresence initial={false}>
-              {activeIncidents.map((incident) => {
-                const statusCfg = STATUS_CONFIG[incident.status] ?? STATUS_CONFIG.intake;
-                const isSelected = selectedIncident === incident.id;
-
-                return (
-                  <motion.div
-                    key={incident.id}
-                    layout
-                    initial={{ opacity: 0, x: 20, scale: 0.97 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={{ opacity: 0, x: -20, scale: 0.97 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    onClick={async () => {
-                      setSelectedIncident(isSelected ? null : incident.id);
-                      // Open accept modal for any incident with a pending broadcast
-                      if (!store.activeBroadcast && ['broadcasting', 'intake', 'geocoded'].includes(incident.status)) {
-                        const { data: bc } = await supabase
-                          .from('incident_broadcasts')
-                          .select('*')
-                          .eq('incident_id', incident.id)
-                          .eq('status', 'pending')
-                          .limit(1)
-                          .single();
-                        if (bc) {
-                          store.setActiveBroadcast({ ...bc, incidents: incident });
-                        }
-                      }
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <Card
-                      className={`relative overflow-hidden transition-all duration-300 ${
-                        isSelected
-                          ? 'border-[2px] border-orange-500 bg-orange-100 shadow-[0_8px_30px_rgba(249,115,22,0.25)] scale-[1.02] z-20'
-                          : 'bg-white border-orange-200/60 hover:bg-orange-50 hover:border-orange-300 hover:shadow-md'
-                      } p-3`}
-                    >
-                      {/* Top row */}
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
-                            incident.severity
-                              ? incident.severity >= 4 ? 'bg-orange-500/20 text-orange-600' :
-                                incident.severity >= 3 ? 'bg-orange-600/20 text-orange-400' :
-                                'bg-yellow-600/20 text-yellow-500'
-                              : 'bg-orange-100 text-zinc-500'
-                          }`}>
-                            {INCIDENT_ICONS[incident.incident_type ?? 'other'] ?? <HelpCircle className="w-3.5 h-3.5" />}
-                          </div>
-                          <span className="text-sm font-semibold text-zinc-700 capitalize">
-                            {incident.incident_type
-                              ? incident.incident_type.replace('_', ' ')
-                              : incident.status === 'intake'
-                              ? 'Processing...'
-                              : 'Unknown'}
-                          </span>
-                        </div>
-                        
-
-                        <div className="flex flex-col items-end gap-1.5 shrink-0">
-                          {isSelected && incident.lat && (
-                            <span className="text-[10px] font-bold text-orange-600 flex items-center bg-orange-500/10 px-1.5 py-0.5 rounded animate-pulse">
-                              <MapPin className="w-2.5 h-2.5 mr-0.5" /> TRACKING
-                            </span>
-                          )}
-                          <Badge
-                            variant="outline"
-                            className={`text-[9px] ${statusCfg.cls}`}
-                          >
-                            {incident.status === 'intake' && (
-                              <Loader2 className="w-2.5 h-2.5 mr-1 animate-spin" />
-                            )}
-                            {statusCfg.label}
-                          </Badge>
-                        </div>
-                      </div>
-
-                      {/* Location */}
-                      {incident.landmark ? (
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <MapPin className="w-3 h-3 text-zinc-500 shrink-0" />
-                          <span className="text-xs text-zinc-600 truncate">{incident.landmark}</span>
-                          {incident.zone && (
-                            <span className="text-[10px] text-zinc-500 shrink-0">· {incident.zone}</span>
-                          )}
-                        </div>
-                      ) : incident.status === 'intake' ? (
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <MapPin className="w-3 h-3 text-zinc-400 shrink-0" />
-                          <span className="text-xs text-zinc-500 italic">Locating...</span>
-                        </div>
-                      ) : null}
-
-                      {/* Summary — expanded view */}
-                      <AnimatePresence>
-                        {isSelected && incident.summary && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden"
-                          >
-                            <p className="text-xs text-zinc-600 leading-relaxed italic mb-2 bg-orange-100/40 rounded-lg p-2.5 border border-orange-200/30">
-                              &ldquo;{incident.summary}&rdquo;
-                            </p>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* Bottom row — time + severity + resolve button */}
-                      <div className="flex items-center gap-2 mt-1">
-                        <Clock className="w-3 h-3 text-zinc-400" />
-                        <span className="text-[10px] text-zinc-500">
-                          {timeAgo(incident.created_at)}
-                        </span>
-                        {incident.severity && (
-                          <Badge
-                            variant="outline"
-                            className={`text-[9px] ml-auto ${SEVERITY_COLORS[incident.severity]} border-current/20`}
-                          >
-                            <Activity className="w-2.5 h-2.5 mr-1" />
-                            {SEVERITY_LABELS[incident.severity]}
-                          </Badge>
-                        )}
-                        {/* Resolve / dismiss button */}
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            console.log('[DASHBOARD] Discarding incident', incident.id);
-                            // Free up the resource first
-                            if (incident.assigned_resource) {
-                              await supabase.from('resources').update({
-                                status: 'available',
-                                updated_at: new Date().toISOString(),
-                              }).eq('id', incident.assigned_resource);
-                            }
-                            // Delete from broadcasts and incidents tables completely
-                            await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
-                            await supabase.from('incidents').delete().eq('id', incident.id);
-                            // Remove from local state + promote next queued call
-                            setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
-                            store.finishCall();
-                          }}
-                          className="text-[9px] text-zinc-400 hover:text-red-500 transition-colors ml-1 px-1.5 py-0.5 rounded hover:bg-red-50"
-                          title="Mark as resolved"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </Card>
-                  </motion.div>
-                );
-              })}
+              {activeIncidents.map((incident, idx) => (
+                <IncidentBrief
+                  key={incident.id}
+                  incident={incident}
+                  index={idx}
+                  isSelected={selectedIncident === incident.id}
+                  isInk={isInk}
+                  onSelect={async () => {
+                    const isSelected = selectedIncident === incident.id;
+                    setSelectedIncident(isSelected ? null : incident.id);
+                    if (!store.activeBroadcast && ['broadcasting', 'intake', 'geocoded'].includes(incident.status)) {
+                      const { data: bc } = await supabase
+                        .from('incident_broadcasts').select('*')
+                        .eq('incident_id', incident.id).eq('status', 'pending').limit(1).single();
+                      if (bc) store.setActiveBroadcast({ ...bc, incidents: incident });
+                    }
+                  }}
+                  onResolve={async (e) => {
+                    e.stopPropagation();
+                    if (incident.assigned_resource) {
+                      await supabase.from('resources').update({
+                        status: 'available', updated_at: new Date().toISOString(),
+                      }).eq('id', incident.assigned_resource);
+                    }
+                    await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
+                    await supabase.from('incidents').delete().eq('id', incident.id);
+                    setAllIncidents((prev) => prev.filter((i) => i.id !== incident.id));
+                    store.finishCall();
+                  }}
+                />
+              ))}
             </AnimatePresence>
 
-            {/* Empty state */}
             {activeIncidents.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center py-12 text-center"
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className="flex flex-col items-center justify-center py-14 text-center"
               >
-                <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center mb-3">
-                  <Radio className="w-4 h-4 text-zinc-400" />
-                </div>
-                <p className="text-sm text-zinc-600 font-medium">All Clear</p>
-                <p className="text-xs text-zinc-500 mt-1">No active incidents</p>
+                <span className={cn('mb-3 h-9 w-9 rounded-full border flex items-center justify-center',
+                  isInk ? 'border-[color:var(--ink-line)]' : 'border-[color:var(--paper-line)]')}
+                >
+                  <Radio className="h-3.5 w-3.5 opacity-55" />
+                </span>
+                <Display level={3} className="!text-[18px] opacity-80">All Clear</Display>
+                <MonoTag size="xs" className="mt-2 opacity-50">No active incidents</MonoTag>
               </motion.div>
             )}
           </div>
 
-          {/* ── Bottom fixed panel: resources + active dispatch ── */}
-          <div className="shrink-0 border-t border-orange-200/60 bg-white max-h-[45%] overflow-y-auto">
-            {/* Resources strip */}
-            {resources.length > 0 && (
-              <div className="px-4 py-2.5 border-b border-orange-100/60">
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5 font-semibold">Resources</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {resources.map((r) => (
-                    <motion.div
-                      key={r.id}
-                      whileTap={{ scale: r.status !== 'available' ? 0.95 : 1 }}
-                      onClick={async () => {
-                        if (r.status === 'available') return;
-                        if (!window.confirm(`Force resource ${r.call_sign} to Available? This will abandon its current incident.`)) return;
-                        
-                        console.log(`[DASHBOARD] Forcing ${r.call_sign} to available...`);
-                        await supabase.from('resources').update({
-                          status: 'available',
-                          updated_at: new Date().toISOString()
-                        }).eq('id', r.id);
-
-                        const incident = allIncidents.find(i => i.assigned_resource === r.id);
-                        if (incident) {
-                          console.log(`[DASHBOARD] Deleting orphaned incident ${incident.id}`);
-                          await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
-                          await supabase.from('incidents').delete().eq('id', incident.id);
-                          setAllIncidents(prev => prev.filter(i => i.id !== incident.id));
-                          store.finishCall();
-                        }
-                      }}
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border ${
-                        r.status !== 'available' ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''
-                      } ${
-                        r.status === 'available'
-                          ? 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'
-                          : r.status === 'dispatched' || r.status === 'en_route'
-                          ? 'bg-amber-600/10 border-amber-600/20 text-amber-500'
-                          : r.status === 'on_scene'
-                          ? 'bg-blue-600/10 border-blue-600/20 text-blue-500'
-                          : 'bg-orange-100/50 border-orange-200/50 text-zinc-500'
-                      }`}
-                      title={r.status !== 'available' ? `Click to Force ${r.call_sign} to Available` : ''}
-                    >
-                      <div className="w-1.5 h-1.5 rounded-full bg-current" />
-                      {r.call_sign}
-                      {r.status !== 'available' && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[8px] opacity-70">
-                            {r.status === 'on_scene' ? 'arrived' : r.status.replace('_', ' ')}
-                          </span>
-                          <RefreshCw className="w-2.5 h-2.5 opacity-40 hover:opacity-100 transition-opacity" />
-                        </div>
-                      )}
-                      {r.status === 'available' && (
-                        <span className="text-[8px] opacity-70 ml-1">active</span>
-                      )}
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Active dispatch — prioritize selected incident, fallback to most recent */}
-            {(() => {
-              const selectedInc = selectedIncident 
-                ? activeIncidents.find(i => i.id === selectedIncident) 
-                : null;
-                
-              const dispatchable = (selectedInc && ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(selectedInc.status))
-                ? selectedInc
-                : activeIncidents.find(i =>
-                    ['accepted', 'dispatched', 'en_route', 'on_scene'].includes(i.status)
-                  );
-                  
-              if (!dispatchable) return null;
-
-              const isDispatched = ['dispatched', 'en_route', 'on_scene'].includes(dispatchable.status);
-              const assignedRes = dispatchable.assigned_resource
-                ? resources.find(r => r.id === dispatchable.assigned_resource)
-                : null;
-
-              return (
-                <div className="px-4 py-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] uppercase tracking-widest font-bold" style={{
-                      color: isDispatched ? '#16a34a' : '#ea580c'
-                    }}>
-                      {dispatchable.status === 'on_scene' ? 'On Scene'
-                        : isDispatched ? 'Ambulance En Route'
-                        : 'Dispatch Now'}
-                    </p>
-                    {isDispatched && assignedRes && (
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                        {assignedRes.call_sign}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-orange-500" />
-                    <span className="text-xs font-semibold text-zinc-800 truncate">
-                      {dispatchable.landmark || 'Unknown'} {dispatchable.zone ? `· ${dispatchable.zone}` : ''}
-                    </span>
-                  </div>
-
-                  {/* Voice chat — key forces fresh component per incident */}
-                  <VoiceChat
-                    key={`voice-${dispatchable.id}`}
-                    incidentId={dispatchable.id}
-                    role="institution"
-                    peerLabel="Civilian"
-                    autoConnect
-                  />
-
-                  {!isDispatched ? (
-                    <motion.button
-                      whileTap={{ scale: 0.97 }}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        const incId = dispatchable.id;
-                        const instId = instituteId;
-                        console.log('[DASHBOARD] Dispatch clicked:', incId, 'institute:', instId);
-
-                        if (!incId || !instId) {
-                          alert('Missing incident or institute ID');
-                          return;
-                        }
-
-                        try {
-                          const res = await fetch('/api/dispatch', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ incident_id: incId, institute_id: instId }),
-                          });
-                          const data = await res.json();
-                          console.log('[DASHBOARD] Dispatch result:', JSON.stringify(data));
-                          if (!res.ok) {
-                            alert(`Dispatch failed: ${data.error || 'Unknown error'}`);
-                          }
-                        } catch (err) {
-                          console.error('[DASHBOARD] Dispatch error:', err);
-                          alert('Dispatch request failed — check console');
-                        }
-                      }}
-                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-400 to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-2 hover:from-orange-500 hover:to-orange-700 transition-all shadow-sm"
-                    >
-                      <Ambulance className="w-4 h-4" />
-                      DISPATCH AMBULANCE
-                    </motion.button>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="w-full py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-center gap-2">
-                        <Ambulance className="w-4 h-4" />
-                        {assignedRes?.call_sign || 'AMBULANCE'} DISPATCHED
-                        {dispatchable.status === 'en_route' && (
-                          <motion.span
-                            className="w-1.5 h-1.5 rounded-full bg-emerald-500"
-                            animate={{ opacity: [1, 0.3, 1] }}
-                            transition={{ duration: 1, repeat: Infinity }}
-                          />
-                        )}
-                      </div>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!window.confirm(`Recall ${assignedRes?.call_sign || 'resource'} and free resource? Incident will be deleted.`)) return;
-                          
-                          if (assignedRes) {
-                            await supabase.from('resources').update({
-                              status: 'available',
-                              updated_at: new Date().toISOString()
-                            }).eq('id', assignedRes.id);
-                          }
-                          
-                          await supabase.from('incident_broadcasts').delete().eq('incident_id', dispatchable.id);
-                          await supabase.from('incidents').delete().eq('id', dispatchable.id);
-                          setAllIncidents(prev => prev.filter(i => i.id !== dispatchable.id));
-                          store.finishCall(); // Promote next queued call
-                        }}
-                        className="w-full py-2.5 rounded-xl border-2 border-orange-100 text-orange-600 text-xs font-bold flex items-center justify-center gap-2 hover:bg-orange-50 transition-all active:scale-[0.98]"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        RECALL & FREE RESOURCE
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+          {/* BOTTOM PANEL — resources + active dispatch */}
+          <div className={cn('shrink-0 border-t', isInk ? 'border-[color:var(--ink-line)]' : 'border-[color:var(--paper-line)]', 'max-h-[48%] overflow-y-auto')}>
+            <ResourceStrip resources={resources} isInk={isInk}
+              onForceFree={async (r) => {
+                if (!window.confirm(`Force ${r.call_sign} → Available? Abandons current incident.`)) return;
+                await supabase.from('resources').update({
+                  status: 'available', updated_at: new Date().toISOString(),
+                }).eq('id', r.id);
+                const incident = allIncidents.find((i) => i.assigned_resource === r.id);
+                if (incident) {
+                  await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
+                  await supabase.from('incidents').delete().eq('id', incident.id);
+                  setAllIncidents((prev) => prev.filter((i) => i.id !== incident.id));
+                  store.finishCall();
+                }
+              }}
+            />
+            <ActiveDispatchPanel
+              activeIncidents={activeIncidents}
+              resources={resources}
+              selectedIncident={selectedIncident}
+              instituteId={instituteId}
+              isInk={isInk}
+              onRecall={async (incident, assignedRes) => {
+                if (!window.confirm(`Recall ${assignedRes?.call_sign || 'resource'}? Incident will be deleted.`)) return;
+                if (assignedRes) {
+                  await supabase.from('resources').update({
+                    status: 'available', updated_at: new Date().toISOString(),
+                  }).eq('id', assignedRes.id);
+                }
+                await supabase.from('incident_broadcasts').delete().eq('incident_id', incident.id);
+                await supabase.from('incidents').delete().eq('id', incident.id);
+                setAllIncidents((prev) => prev.filter((i) => i.id !== incident.id));
+                store.finishCall();
+              }}
+            />
           </div>
-        </div>
+        </aside>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Sub-components
+// ============================================================
+
+function ThemeToggle({ isInk, onClick }: { isInk: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={isInk ? 'Switch to paper (light)' : 'Switch to ink (dark)'}
+      className={cn(
+        'relative flex h-7 w-12 items-center rounded-full border transition-colors',
+        isInk
+          ? 'border-[color:var(--ink-line)] bg-[color:var(--ink-bg-3)]'
+          : 'border-[color:var(--paper-line)] bg-[color:var(--paper-bg-2)]',
+      )}
+    >
+      <motion.span
+        layout
+        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+        className={cn(
+          'flex h-5 w-5 items-center justify-center rounded-full',
+          isInk ? 'ml-auto mr-0.5 bg-[color:var(--ink-fg)] text-[color:var(--ink-bg)]'
+                : 'ml-0.5 mr-auto bg-[color:var(--paper-ink)] text-[color:var(--paper-bg)]',
+        )}
+      >
+        {isInk ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
+      </motion.span>
+    </button>
+  );
+}
+
+function LiveDot({ isInk }: { isInk: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <motion.span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ background: 'var(--status-ok)' }}
+        animate={{ opacity: [1, 0.3, 1] }}
+        transition={{ duration: 1.8, repeat: Infinity }}
+      />
+      <MonoTag size="xs" className={cn('font-bold', isInk ? 'text-[color:var(--ink-fg-soft)]' : 'text-[color:var(--paper-ink-soft)]')}>
+        LIVE
+      </MonoTag>
+    </div>
+  );
+}
+
+function PillCounter({
+  icon, value, label, tone, isInk,
+}: {
+  icon: React.ReactNode; value: number; label: string;
+  tone: 'ok' | 'action' | 'alert'; isInk: boolean;
+}) {
+  const colors = {
+    ok:     { fg: 'var(--status-ok)',    bg: 'rgba(95,161,115,0.10)' },
+    action: { fg: 'var(--action)',        bg: 'rgba(234,88,12,0.10)' },
+    alert:  { fg: 'var(--status-alert)',  bg: 'rgba(193,57,43,0.10)' },
+  }[tone];
+  return (
+    <div className="flex items-center gap-2 px-2.5 py-1 rounded-sm border"
+      style={{ borderColor: colors.fg + '40', background: colors.bg, color: colors.fg }}
+    >
+      <span>{icon}</span>
+      <span className="font-mono-tabular text-[11px] font-bold tabular-nums">{value}</span>
+      <MonoTag size="xs" className="opacity-75">{label}</MonoTag>
+    </div>
+  );
+}
+
+function FidsStat({ n, label, color }: { n: number; label: string; color: string }) {
+  return (
+    <div className="flex shrink-0 items-baseline gap-2.5">
+      <span
+        className="font-display font-semibold leading-none tabular-nums"
+        style={{ fontSize: 28, color, letterSpacing: '-0.025em', fontVariationSettings: '"opsz" 96, "SOFT" 30' }}
+      >
+        {n.toString().padStart(2, '0')}
+      </span>
+      <MonoTag size="xs" className="opacity-65">{label}</MonoTag>
+    </div>
+  );
+}
+
+function FidsSep({ isInk }: { isInk: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="h-7 w-px shrink-0"
+      style={{ background: isInk ? 'var(--ink-line)' : 'var(--paper-line)' }}
+    />
+  );
+}
+
+function MapLegend({ isInk, institute }: { isInk: boolean; institute: Institute | null }) {
+  const items = [
+    { color: 'var(--status-ok)',      label: 'Arrived'  },
+    { color: 'var(--action)',          label: 'Deployed' },
+    { color: 'var(--status-route)',    label: 'Active'   },
+    { color: 'var(--status-alert)',    label: 'Incident', ping: true },
+    { color: isInk ? 'var(--ink-fg)' : 'var(--paper-ink)', label: institute?.type === 'ambulance' ? 'Hospital' : 'Station' },
+  ];
+  return (
+    <div
+      className={cn(
+        'absolute bottom-4 left-4 z-[5] flex flex-col gap-2 px-3 py-3 backdrop-blur-sm border',
+        isInk
+          ? 'bg-[color:var(--ink-bg-2)]/85 border-[color:var(--ink-line)]'
+          : 'bg-white/85 border-[color:var(--paper-line)]',
+      )}
+    >
+      <MonoTag size="xs" className="opacity-50 mb-1">Legend</MonoTag>
+      {items.map((it) => (
+        <div key={it.label} className="flex items-center gap-2.5">
+          <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+            {it.ping && (
+              <span className="absolute h-3 w-3 rounded-full opacity-30 animate-ping" style={{ background: it.color }} />
+            )}
+            <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
+          </span>
+          <MonoTag size="xs" className="opacity-75">{it.label}</MonoTag>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// Editorial incident brief
+// ============================================================
+function IncidentBrief({
+  incident, index, isSelected, isInk, onSelect, onResolve,
+}: {
+  incident: Incident; index: number; isSelected: boolean; isInk: boolean;
+  onSelect: () => void; onResolve: (e: React.MouseEvent) => void | Promise<void>;
+}) {
+  const kind = STATUS_KIND[incident.status] ?? 'neutral';
+  const label = STATUS_LABEL[incident.status] ?? 'Unknown';
+  const isCritical = (incident.severity ?? 0) >= 5;
+
+  return (
+    <motion.article
+      layout
+      initial={{ opacity: 0, x: 16, scale: 0.98 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: -12, scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+      onClick={onSelect}
+      className={cn(
+        'group cursor-pointer relative px-3.5 py-3 border transition-colors',
+        isSelected
+          ? 'border-[color:var(--action)]'
+          : (isInk ? 'border-[color:var(--ink-line)] hover:border-[color:var(--ink-fg-muted)]'
+                   : 'border-[color:var(--paper-line)] hover:border-[color:var(--paper-ink-muted)]'),
+        isInk ? 'bg-[color:var(--ink-bg-2)]' : 'bg-white/70',
+      )}
+    >
+      {/* Selected glow */}
+      {isSelected && (
+        <span aria-hidden className="pointer-events-none absolute -inset-px"
+          style={{ boxShadow: '0 0 0 1px var(--action), 0 14px 36px -18px rgba(234,88,12,0.55)' }} />
+      )}
+      {isCritical && (
+        <span aria-hidden className="absolute right-0 top-0 bottom-0 w-[3px] animate-heartbeat" style={{ background: 'var(--sev-life)' }} />
+      )}
+
+      <div className="flex items-start justify-between gap-3">
+        {/* Left: number + headline */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1.5">
+            <MonoTag size="xs" className="opacity-45 tabular-nums">№ {String(index + 1).padStart(2, '0')}</MonoTag>
+            <span className={cn('h-px flex-1', isInk ? 'bg-[color:var(--ink-line)]' : 'bg-[color:var(--paper-line)]')} />
+            <MonoTag size="xs" className="opacity-50">{timeAgo(incident.created_at)}</MonoTag>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="opacity-65">{INCIDENT_ICONS[incident.incident_type ?? 'other'] ?? <HelpCircle className="h-3.5 w-3.5" />}</span>
+            <Display level={3} className="!text-[19px] capitalize">
+              {incident.incident_type
+                ? incident.incident_type.replace('_', ' ')
+                : incident.status === 'intake' ? 'Processing…' : 'Unknown'}
+            </Display>
+          </div>
+          {incident.landmark ? (
+            <p className={cn('mt-1.5 text-[12.5px] leading-snug truncate',
+              isInk ? 'text-[color:var(--ink-fg-soft)]' : 'text-[color:var(--paper-ink-soft)]')}>
+              {incident.landmark}{incident.zone ? ` · ${incident.zone}` : ''}
+            </p>
+          ) : (
+            <p className={cn('mt-1.5 text-[12.5px] italic leading-snug',
+              isInk ? 'text-[color:var(--ink-fg-muted)]' : 'text-[color:var(--paper-ink-muted)]')}>
+              Locating…
+            </p>
+          )}
+
+          {/* Expanded summary */}
+          <AnimatePresence>
+            {isSelected && incident.summary && (
+              <motion.p
+                initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                animate={{ height: 'auto', opacity: 1, marginTop: 10 }}
+                exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                className="overflow-hidden font-display italic text-[13px] leading-relaxed"
+                style={{ fontVariationSettings: '"opsz" 60, "SOFT" 100' }}
+              >
+                &ldquo;{incident.summary}&rdquo;
+              </motion.p>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Right: severity + status */}
+        <div className="shrink-0 flex flex-col items-end gap-2">
+          {incident.severity != null && (
+            <SeverityBars severity={incident.severity} className={cn(isInk ? 'text-[color:var(--ink-fg-muted)]' : 'text-[color:var(--paper-ink-muted)]')} />
+          )}
+          <StatusUnderline kind={kind}>{label}</StatusUnderline>
+          <button
+            onClick={onResolve}
+            title="Mark as resolved"
+            className={cn('mt-1 text-[10px] opacity-40 hover:opacity-100 transition-opacity', isInk ? 'hover:text-[color:var(--status-alert)]' : 'hover:text-[color:var(--status-alert)]')}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </motion.article>
+  );
+}
+
+// ============================================================
+// Resource chits
+// ============================================================
+function ResourceStrip({
+  resources, isInk, onForceFree,
+}: {
+  resources: Resource[]; isInk: boolean;
+  onForceFree: (r: Resource) => void | Promise<void>;
+}) {
+  if (resources.length === 0) return null;
+
+  const dotColor = (status: string) => ({
+    available: 'var(--status-ok)',
+    dispatched: 'var(--action)',
+    en_route: 'var(--action)',
+    on_scene: 'var(--status-route)',
+    returning: 'var(--status-route)',
+  }[status] ?? 'var(--ink-fg-muted)');
+
+  return (
+    <div className={cn('px-5 py-3 border-b', isInk ? 'border-[color:var(--ink-line)]' : 'border-[color:var(--paper-line)]')}>
+      <Eyebrow className="mb-2.5 opacity-65">Resources</Eyebrow>
+      <div className="flex flex-wrap gap-2">
+        {resources.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => r.status !== 'available' && onForceFree(r)}
+            className={cn(
+              'group flex items-center gap-2 px-2.5 py-1 border text-current transition-all',
+              r.status !== 'available' && 'cursor-pointer hover:opacity-80',
+              isInk ? 'border-[color:var(--ink-line)] bg-[color:var(--ink-bg-3)]/60' : 'border-[color:var(--paper-line)] bg-white/60',
+            )}
+            title={r.status !== 'available' ? `Click to free ${r.call_sign}` : undefined}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: dotColor(r.status) }} />
+            <MonoTag size="sm" className="font-bold">{r.call_sign}</MonoTag>
+            <MonoTag size="xs" className="opacity-50">
+              {r.status === 'on_scene' ? 'arrived' : r.status.replace('_', ' ')}
+            </MonoTag>
+            {r.status !== 'available' && (
+              <RefreshCw className="h-3 w-3 opacity-30 transition-opacity group-hover:opacity-100" />
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Active dispatch — voice chat + dispatch button
+// ============================================================
+function ActiveDispatchPanel({
+  activeIncidents, resources, selectedIncident, instituteId, isInk, onRecall,
+}: {
+  activeIncidents: Incident[]; resources: Resource[];
+  selectedIncident: string | null; instituteId: string | null; isInk: boolean;
+  onRecall: (incident: Incident, assignedRes: Resource | undefined) => void | Promise<void>;
+}) {
+  const dispatchablePool = ['accepted', 'dispatched', 'en_route', 'on_scene'];
+  const selectedInc = selectedIncident
+    ? activeIncidents.find((i) => i.id === selectedIncident) : null;
+  const dispatchable =
+    (selectedInc && dispatchablePool.includes(selectedInc.status))
+      ? selectedInc
+      : activeIncidents.find((i) => dispatchablePool.includes(i.status));
+
+  const dispatchClickRef = useRef(false);
+  if (!dispatchable) return null;
+
+  const isDispatched = ['dispatched', 'en_route', 'on_scene'].includes(dispatchable.status);
+  const assignedRes = dispatchable.assigned_resource
+    ? resources.find((r) => r.id === dispatchable.assigned_resource) : undefined;
+
+  return (
+    <div className="px-5 py-4 space-y-3.5">
+      <div className="flex items-baseline justify-between">
+        <Eyebrow className="font-bold" >
+          {dispatchable.status === 'on_scene'
+            ? 'On Scene'
+            : isDispatched ? 'Ambulance En Route' : 'Dispatch Now'}
+        </Eyebrow>
+        {isDispatched && assignedRes && (
+          <MonoTag size="sm" className="font-bold" style={{ color: 'var(--action)' }}>
+            {assignedRes.call_sign}
+          </MonoTag>
+        )}
+      </div>
+
+      <div>
+        <Display level={3} className="!text-[18px] capitalize">
+          {dispatchable.incident_type ?? 'Emergency'}
+        </Display>
+        <p className={cn('mt-0.5 text-[12px]', isInk ? 'text-[color:var(--ink-fg-soft)]' : 'text-[color:var(--paper-ink-soft)]')}>
+          {dispatchable.landmark ?? '—'}{dispatchable.zone ? ` · ${dispatchable.zone}` : ''}
+        </p>
+      </div>
+
+      {/* A* search trace — shows the broker algorithm's decision */}
+      {dispatchable.search_trace && (
+        <SearchTraceBadge trace={dispatchable.search_trace} isInk={isInk} />
+      )}
+
+      {/* Voice chat — keeps existing component */}
+      <VoiceChat
+        key={`voice-${dispatchable.id}`}
+        incidentId={dispatchable.id}
+        role="institution"
+        peerLabel="Civilian"
+        autoConnect
+      />
+
+      {!isDispatched ? (
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (dispatchClickRef.current) return;
+            dispatchClickRef.current = true;
+            const incId = dispatchable.id;
+            const instId = instituteId;
+            if (!incId || !instId) {
+              alert('Missing incident or institute ID');
+              dispatchClickRef.current = false;
+              return;
+            }
+            try {
+              const res = await fetch('/api/dispatch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ incident_id: incId, institute_id: instId }),
+              });
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                alert(`Dispatch failed: ${data.error || 'Unknown error'}`);
+              }
+            } finally {
+              dispatchClickRef.current = false;
+            }
+          }}
+          className="flex w-full items-center justify-center gap-2 py-3 text-[12px] font-bold uppercase tracking-[0.12em] text-white transition-all"
+          style={{ background: 'var(--action)' }}
+        >
+          <Ambulance className="h-4 w-4" />
+          DISPATCH AMBULANCE
+        </motion.button>
+      ) : (
+        <div className="space-y-2">
+          <div
+            className={cn(
+              'flex items-center justify-center gap-2 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] border',
+              isInk ? 'border-[color:var(--ink-line)] bg-[color:var(--ink-bg-3)]' : 'border-[color:var(--paper-line)] bg-[color:var(--paper-bg-2)]',
+            )}
+            style={{ color: 'var(--status-ok)' }}
+          >
+            <Ambulance className="h-4 w-4" />
+            {assignedRes?.call_sign || 'AMBULANCE'} DISPATCHED
+            {dispatchable.status === 'en_route' && (
+              <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }}
+                className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--status-ok)' }} />
+            )}
+          </div>
+          <button
+            onClick={() => onRecall(dispatchable, assignedRes)}
+            className={cn(
+              'flex w-full items-center justify-center gap-2 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] border transition-colors',
+              isInk
+                ? 'border-[color:var(--ink-line)] hover:border-[color:var(--action)] text-[color:var(--ink-fg-soft)]'
+                : 'border-[color:var(--paper-line)] hover:border-[color:var(--action)] text-[color:var(--paper-ink-soft)]',
+            )}
+          >
+            <RefreshCw className="h-3 w-3" />
+            Recall &amp; free resource
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// A* search trace badge — shows the broker algorithm's reasoning.
+// Collapsed by default (hops, cost, expansion stats); click to
+// expand the full path of landmarks the search walked through.
+// ============================================================
+function SearchTraceBadge({ trace, isInk }: { trace: SearchTrace; isInk: boolean }) {
+  const [open, setOpen] = useState(false);
+  const isAStar = trace.algorithm === 'A*';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        'border text-[11px] leading-snug',
+        isInk ? 'border-[color:var(--ink-line)] bg-[color:var(--ink-bg-3)]/60'
+              : 'border-[color:var(--paper-line)] bg-[color:var(--paper-bg-2)]/70',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+      >
+        <span
+          className="flex h-4 w-4 items-center justify-center rounded-full font-mono-tabular text-[9px] font-bold"
+          style={{ background: isAStar ? 'var(--action)' : 'var(--status-route)', color: 'white' }}
+          title={isAStar ? 'A* informed search' : 'Haversine fallback'}
+        >
+          {isAStar ? '★' : 'H'}
+        </span>
+
+        <MonoTag size="xs" className="font-bold">
+          {isAStar ? 'A*' : 'HAVERSINE'}
+        </MonoTag>
+
+        {isAStar && trace.hops != null && (
+          <>
+            <span className="opacity-30">·</span>
+            <MonoTag size="xs">
+              <span className="tabular-nums">{trace.hops}</span> HOPS
+            </MonoTag>
+          </>
+        )}
+
+        <span className="opacity-30">·</span>
+        <MonoTag size="xs">
+          <span className="tabular-nums">{trace.cost_km.toFixed(2)}</span> KM
+        </MonoTag>
+
+        {isAStar && trace.expanded_nodes && trace.total_nodes && (
+          <>
+            <span className="opacity-30">·</span>
+            <MonoTag size="xs" className="opacity-65">
+              EXP <span className="tabular-nums">{trace.expanded_nodes.length}</span>
+              /{trace.total_nodes}
+            </MonoTag>
+          </>
+        )}
+
+        {isAStar && trace.took_ms != null && (
+          <MonoTag size="xs" className="ml-auto opacity-50">
+            {trace.took_ms}ms
+          </MonoTag>
+        )}
+      </button>
+
+      <AnimatePresence>
+        {open && trace.path && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className={cn('px-3 pb-2.5 pt-0', isInk ? 'border-t border-[color:var(--ink-line)]' : 'border-t border-[color:var(--paper-line)]')}>
+              <MonoTag size="xs" className="opacity-50">CHOSEN PATH</MonoTag>
+              <ol className="mt-1.5 space-y-1">
+                {trace.path.map((node, i) => (
+                  <li key={node.id} className="flex items-baseline gap-2">
+                    <MonoTag size="xs" className="opacity-40 tabular-nums">
+                      {String(i).padStart(2, '0')}
+                    </MonoTag>
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{
+                        background: node.kind === 'incident' ? 'var(--status-alert)'
+                          : node.kind === 'institute' ? 'var(--action)'
+                          : 'var(--status-route)',
+                      }}
+                    />
+                    <span className="text-[11.5px] capitalize">{node.label}</span>
+                    <MonoTag size="xs" className="ml-auto opacity-40">
+                      {node.kind}
+                    </MonoTag>
+                  </li>
+                ))}
+              </ol>
+              {trace.heuristic && (
+                <MonoTag size="xs" className="mt-2 block opacity-40">
+                  h = {trace.heuristic}
+                </MonoTag>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

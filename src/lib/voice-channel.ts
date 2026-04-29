@@ -31,6 +31,7 @@ export class VoiceChannel {
   private started = false;
   private pendingCandidates: RTCIceCandidateInit[] = [];
   private remoteDescSet = false;
+  private offerRetryTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(incidentId: string, role: VoiceRole, cb: VoiceChannelCallbacks) {
     this.channelName = `voice-${incidentId}`;
@@ -69,10 +70,16 @@ export class VoiceChannel {
       this.pc.onconnectionstatechange = () => {
         const s = this.pc?.connectionState;
         console.log(`${t} State: ${s}`);
-        if (s === 'connected') this.cb.onConnected();
+        if (s === 'connected') {
+          this.stopOfferRetry();
+          this.cb.onConnected();
+        }
         // Only treat 'failed' and 'closed' as real disconnect
         // 'disconnected' is temporary (ICE renegotiation) — ignore it
-        if (s === 'failed' || s === 'closed') this.cb.onDisconnected();
+        if (s === 'failed' || s === 'closed') {
+          this.stopOfferRetry();
+          this.cb.onDisconnected();
+        }
       };
 
       this.pc.oniceconnectionstatechange = () => {
@@ -104,6 +111,7 @@ export class VoiceChannel {
               await this.pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
               this.remoteDescSet = true;
               await this.flushCandidates();
+              this.stopOfferRetry();
               console.log(`${t} Answer applied`);
             }
           }
@@ -143,18 +151,36 @@ export class VoiceChannel {
 
       console.log(`${t} Channel ready`);
 
-      // 4. Civilian sends offer after delay (institution just waits)
+      // 4. Civilian initiates the SDP handshake. The institution may not have
+      //    finished subscribing to the Supabase Broadcast channel yet — and
+      //    Broadcast does NOT buffer messages for late joiners — so a single
+      //    offer can vanish and both peers stall in `connecting` forever.
+      //    Re-broadcast the SAME offer every 2s until either:
+      //      a) the institution answers (we apply remote desc → stopOfferRetry)
+      //      b) the peer connection reaches `connected` (also stopOfferRetry)
+      //      c) the call is hung up / channel torn down (cleanup → stopOfferRetry)
+      //    Re-using the same SDP keeps the handshake idempotent for the peer.
       if (this.role === 'civilian') {
-        // Send a ping first to verify channel works
         this.send('ping', {});
-        await new Promise(r => setTimeout(r, 2500));
+        await new Promise(r => setTimeout(r, 800));
 
         if (!this.pc) return;
         console.log(`${t} Creating offer...`);
         const offer = await this.pc.createOffer();
         await this.pc.setLocalDescription(offer);
-        this.send('offer', { sdp: { type: offer.type, sdp: offer.sdp } });
-        console.log(`${t} Offer sent`);
+        const offerPayload = { sdp: { type: offer.type, sdp: offer.sdp } };
+
+        this.send('offer', offerPayload);
+        console.log(`${t} Offer sent (will retry every 2s until answered)`);
+
+        this.offerRetryTimer = setInterval(() => {
+          if (!this.pc || this.remoteDescSet) {
+            this.stopOfferRetry();
+            return;
+          }
+          console.log(`${t} Re-broadcasting offer (peer not yet answered)`);
+          this.send('offer', offerPayload);
+        }, 2000);
       }
 
     } catch (err) {
@@ -168,6 +194,13 @@ export class VoiceChannel {
       try { await this.pc?.addIceCandidate(new RTCIceCandidate(c)); } catch { /* skip */ }
     }
     this.pendingCandidates = [];
+  }
+
+  private stopOfferRetry(): void {
+    if (this.offerRetryTimer) {
+      clearInterval(this.offerRetryTimer);
+      this.offerRetryTimer = null;
+    }
   }
 
   private async send(type: string, data: Record<string, unknown>): Promise<void> {
@@ -189,6 +222,7 @@ export class VoiceChannel {
   }
 
   private cleanup(): void {
+    this.stopOfferRetry();
     this.localStream?.getTracks().forEach(t => t.stop());
     this.localStream = null;
     this.pc?.close();

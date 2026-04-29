@@ -2,34 +2,98 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+ * Waasta Design Tokens
+ * Two surfaces: PAPER (warm cream, civilian/landing) + INK (near-black, war room)
+ * One action accent: orange. Status semantics: emerald, sky, rose.
+ * ============================================================ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 20 14.3% 4.1%;
+    /* shadcn vars (kept for component primitives) */
+    --background: 35 35% 96%;
+    --foreground: 24 12% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 20 14.3% 4.1%;
+    --card-foreground: 24 12% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 20 14.3% 4.1%;
+    --popover-foreground: 24 12% 9%;
     --primary: 24.6 95% 53.1%;
     --primary-foreground: 60 9.1% 97.8%;
-    --secondary: 60 4.8% 95.9%;
+    --secondary: 35 25% 92%;
     --secondary-foreground: 24 9.8% 10%;
-    --muted: 60 4.8% 95.9%;
-    --muted-foreground: 25 5.3% 44.7%;
-    --accent: 60 4.8% 95.9%;
+    --muted: 35 20% 92%;
+    --muted-foreground: 24 6% 38%;
+    --accent: 35 25% 92%;
     --accent-foreground: 24 9.8% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 350 75% 50%;
     --destructive-foreground: 60 9.1% 97.8%;
-    --border: 20 5.9% 90%;
-    --input: 20 5.9% 90%;
+    --border: 30 12% 86%;
+    --input: 30 12% 86%;
     --ring: 24.6 95% 53.1%;
-    --radius: 0.75rem;
+    --radius: 0.5rem;
+
+    /* === Waasta Paper surface (cream notebook) === */
+    --paper-bg:        #fbf7f1;
+    --paper-bg-2:      #f5efe5;
+    --paper-ink:       #1c1814;
+    --paper-ink-soft:  #4b443d;
+    --paper-ink-muted: #807467;
+    --paper-line:      #e3dccf;
+    --paper-grid:      rgba(28, 24, 20, 0.045);
+
+    /* === Waasta Ink surface (operator console) === */
+    --ink-bg:          #0e0e10;
+    --ink-bg-2:        #17171a;
+    --ink-bg-3:        #1f1f24;
+    --ink-fg:          #f5f3ee;
+    --ink-fg-soft:     #b8b3aa;
+    --ink-fg-muted:    #6e6a63;
+    --ink-line:        #2a2a30;
+    --ink-grid:        rgba(245, 243, 238, 0.035);
+
+    /* === Action + status === */
+    --action:          #ea580c;  /* orange — only on CTAs / alerts / tracked routes */
+    --action-soft:     #f97316;
+    --action-glow:     rgba(234, 88, 12, 0.35);
+
+    --sev-low:         #6b9b7a;  /* sage */
+    --sev-mid:         #d4a72c;  /* mustard */
+    --sev-high:        #ea580c;  /* action orange */
+    --sev-critical:    #c1392b;  /* deep red */
+    --sev-life:        #8a1c12;  /* near-blood */
+
+    --status-ok:       #5fa173;  /* arrived / available */
+    --status-route:    #6b8db5;  /* in transit / sky */
+    --status-alert:    #c1392b;  /* incident / offline */
+    --status-amber:    #b87f1e;  /* alerting */
+  }
+
+  /* Dashboard ink theme — applied via .theme-ink on the dashboard root.
+   * Paper surfaces are the default everywhere else. */
+  .theme-ink {
+    --background: 240 5% 6%;
+    --foreground: 40 18% 95%;
+    --card: 240 5% 9%;
+    --card-foreground: 40 18% 95%;
+    --popover: 240 5% 9%;
+    --popover-foreground: 40 18% 95%;
+    --secondary: 240 5% 12%;
+    --secondary-foreground: 40 18% 95%;
+    --muted: 240 5% 12%;
+    --muted-foreground: 40 8% 60%;
+    --accent: 240 5% 12%;
+    --accent-foreground: 40 18% 95%;
+    --border: 240 5% 18%;
+    --input: 240 5% 18%;
+    color-scheme: dark;
   }
 }
 
 @layer base {
-  * {
-    border-color: hsl(var(--border));
+  * { border-color: hsl(var(--border)); }
+
+  html {
+    /* Distinctive cascade: serif display + Geist sans body + Geist mono numerics */
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   }
 
   body {
@@ -37,118 +101,153 @@
     color: hsl(var(--foreground));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  ::selection {
+    background-color: var(--action);
+    color: white;
   }
 }
 
-/* Leaflet light overrides */
-.leaflet-container {
-  background: #f4f4f5 !important;
+/* ============================================================
+ * Typography utility classes (semantic, used everywhere)
+ * ============================================================ */
+@layer utilities {
+  .font-display {
+    font-family: var(--font-fraunces), 'Fraunces', ui-serif, Georgia, serif;
+    font-feature-settings: 'ss01', 'ss02';
+    font-optical-sizing: auto;
+  }
+  .font-mono-tabular {
+    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, 'Menlo', monospace;
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: 'ss02', 'cv02';
+  }
+  .font-sans-tight {
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.011em;
+  }
+
+  /* Pretty selection rectangle for the operator's eye */
+  .text-balance { text-wrap: balance; }
+  .text-pretty  { text-wrap: pretty; }
 }
 
-.leaflet-control-zoom a {
-  background: #ffffff !important;
-  color: #09090b !important;
-  border-color: #e4e4e7 !important;
+/* ============================================================
+ * Surface backgrounds (atmosphere, not solid color)
+ * ============================================================ */
+@layer components {
+  /* Warm paper with faint grid + grain — civilian/landing */
+  .surface-paper {
+    background-color: var(--paper-bg);
+    color: var(--paper-ink);
+    background-image:
+      linear-gradient(var(--paper-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--paper-grid) 1px, transparent 1px),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.11  0 0 0 0 0.09  0 0 0 0 0.07  0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 32px 32px, 32px 32px, 200px 200px;
+    background-position: -1px -1px, -1px -1px, 0 0;
+  }
+
+  /* Operator ink — faint vignetted dark with subtle grain */
+  .surface-ink {
+    background-color: var(--ink-bg);
+    color: var(--ink-fg);
+    background-image:
+      radial-gradient(ellipse at top, rgba(234, 88, 12, 0.06), transparent 55%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.96  0 0 0 0 0.95  0 0 0 0 0.93  0 0 0 0.025 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Hairline rule used as section divider — sharper than border-b */
+  .rule-paper { border-top: 1px solid var(--paper-line); }
+  .rule-ink   { border-top: 1px solid var(--ink-line); }
 }
 
-.leaflet-control-attribution {
-  background: rgba(255, 255, 255, 0.8) !important;
-  color: #52525b !important;
+/* ============================================================
+ * Motion primitives
+ * ============================================================ */
+@keyframes draw-route {
+  to { stroke-dashoffset: 0; }
 }
 
-.leaflet-control-attribution a {
-  color: #3f3f46 !important;
+@keyframes scan-line {
+  0%   { transform: translateX(-100%); opacity: 0; }
+  10%  { opacity: 0.6; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateX(100%); opacity: 0; }
 }
 
-/* Pulse animation for SOS */
+@keyframes heartbeat {
+  0%, 60%, 100% { opacity: 1; transform: scale(1); }
+  30%           { opacity: 0.85; transform: scale(1.04); }
+}
+
+@keyframes sos-halo {
+  0%   { transform: scale(0.92); opacity: 0.85; }
+  70%  { transform: scale(1.6);  opacity: 0; }
+  100% { transform: scale(1.6);  opacity: 0; }
+}
+
+@keyframes ticker-fade {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes underline-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.animate-scan-line { animation: scan-line 2.4s ease-in-out infinite; }
+.animate-heartbeat { animation: heartbeat 1.2s ease-in-out infinite; }
+.animate-sos-halo  { animation: sos-halo 2.2s ease-out infinite; }
+
+/* ============================================================
+ * Map style overlays (MapLibre) — let the operator's map breathe
+ * ============================================================ */
+.maplibregl-ctrl-attrib {
+  font-size: 9px !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+}
+
+.theme-ink .maplibregl-ctrl-attrib {
+  background: rgba(14, 14, 16, 0.55) !important;
+  color: var(--ink-fg-muted) !important;
+}
+.theme-ink .maplibregl-ctrl-attrib a { color: var(--ink-fg-soft) !important; }
+
+/* ============================================================
+ * Scrollbar — quiet on paper, almost invisible on ink
+ * ============================================================ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--paper-line);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: #d3c9b6; }
+
+.theme-ink ::-webkit-scrollbar-thumb { background: var(--ink-line); }
+.theme-ink ::-webkit-scrollbar-thumb:hover { background: #38383f; }
+
+/* ============================================================
+ * Form bits
+ * ============================================================ */
+textarea { caret-color: var(--action); }
+textarea:focus { outline: none; }
+
+/* ============================================================
+ * Legacy SOS animations — kept for backwards-compat
+ * ============================================================ */
 @keyframes sos-pulse {
-
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-
-  50% {
-    transform: scale(1.15);
-    opacity: 0.8;
-  }
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.15); opacity: 0.8; }
 }
 
 @keyframes sos-ring {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-
-  100% {
-    transform: scale(2.5);
-    opacity: 0;
-  }
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
 }
 
-.sos-pulse {
-  animation: sos-pulse 1.5s ease-in-out infinite;
-}
-
-.sos-ring {
-  animation: sos-ring 2s ease-out infinite;
-}
-
-/* Glow effects */
-.glow-orange {
-  box-shadow: 0 0 20px rgba(249, 115, 22, 0.4), 0 0 60px rgba(249, 115, 22, 0.15);
-}
-
-.glow-green {
-  box-shadow: 0 0 15px rgba(34, 197, 94, 0.4), 0 0 45px rgba(34, 197, 94, 0.1);
-}
-
-.glow-amber {
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.4), 0 0 45px rgba(245, 158, 11, 0.1);
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: #ffffff;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #ffedd5;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #fdba74;
-}
-
-/* Textarea */
-textarea {
-  caret-color: #f97316;
-}
-
-textarea:focus {
-  outline: none;
-}
-
-/* Input mode transition */
-.input-panel-enter {
-  animation: slideUp 0.25s ease-out;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+.sos-pulse { animation: sos-pulse 1.5s ease-in-out infinite; }
+.sos-ring  { animation: sos-ring 2s ease-out infinite; }

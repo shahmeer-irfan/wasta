@@ -2,7 +2,7 @@
 
 > Multi-agent AI system that connects civilians to rescue services through voice AI, real-time dispatch, and live ambulance tracking.
 
-Built for [Hackathon Name] — a production-grade emergency response broker powered by LangGraph orchestration, Groq Whisper STT, and WebRTC voice communication.
+Built for AI Mustaqbil 2.0 — a production-grade emergency response broker powered by LangGraph orchestration, Groq Whisper STT, and WebRTC voice communication.
 
 ---
 
@@ -38,7 +38,7 @@ START ──► INTAKE ──► GEOCODE ──► BROKER ──► PIVOT (HITL)
 |------------|------|-----------|
 | **Intake Agent** | Parses emergency transcript into structured data (type, severity, landmark) | Groq Llama 3.3 70B |
 | **Geocode Agent** | Matches caller's location words to 10+ Karachi landmarks with fuzzy scoring | Custom fuzzy matcher + GPS fallback |
-| **Broker Agent** | Finds nearest available rescue institute using haversine distance | Supabase query + distance calc |
+| **Broker Agent** | **A\* informed search** over a Karachi road graph picks the optimal available institute | A\* + binary min-heap + traffic-weighted edges |
 | **Pivot Agent** | HITL checkpoint — pauses graph, waits for human accept/reject | Supabase Realtime |
 | **Patch Agent** | Confirms acceptance, marks incident dispatched | Supabase update |
 
@@ -57,6 +57,167 @@ START ──► INTAKE ──► GEOCODE ──► BROKER ──► PIVOT (HITL)
   status: string,               // Current pipeline stage
 }
 ```
+
+---
+
+## A\* Informed Search (Broker Agent) — Classical AI
+
+The Broker node is the only place in Waasta where a *classical AI* algorithm is the load-bearing decision-maker. It uses **A\* search** (Hart, Nilsson & Raphael, 1968) to choose which available institute should receive the emergency broadcast. This replaces a naive nearest-neighbour reduce that ignored the road network's topology.
+
+### Why A\* (and not haversine, BFS, or DFS)
+
+The previous broker did:
+
+```ts
+// O(n) linear scan, "nearest as the crow flies"
+const nearest = institutes.reduce((best, inst) =>
+  haversine(incident, inst) < haversine(incident, best) ? inst : best
+);
+```
+
+That's wrong in any city with non-trivial topology. Karachi's harbour, single-bridge crossings (Clifton Bridge), and chronic congestion at Saddar make road distance very different from straight-line distance. Two institutes can be 4 km apart on a map but 12 km apart by road. The broker also can't account for traffic this way.
+
+| Algorithm | Why it fits this problem | Why we picked it |
+|-----------|--------------------------|------------------|
+| **BFS / DFS** *(uninformed)* | Walks the same graph but with no heuristic. Finds *a* path, not necessarily the shortest. | Skipped — uninformed search is academically weaker for this use case |
+| **Dijkstra** *(uninformed UCS)* | Finds the optimal path. | Becomes A\* the moment we add a heuristic — same code, more expansions |
+| **Greedy best-first** | Uses heuristic only — fast but not optimal. | Skipped — non-optimal answers in a life-safety pipeline are unacceptable |
+| **A\*** *(informed)* | Optimal *and* fast: combines true cost-so-far `g(n)` with admissible heuristic `h(n)`. | **Picked** — minimises expanded nodes while guaranteeing the optimal institute |
+| **CSP / Genetic** | Better fit for *multi-incident* assignment problems. | Out of scope — Waasta currently dispatches one incident at a time |
+
+A\* is the textbook fit, matches **Week 5 (Informed Search)** of the syllabus, and produces a richly demonstrable trace that the dashboard can render.
+
+### The graph
+
+A small (~14 node) hand-built graph of Karachi:
+
+| Node kind | Source | Count |
+|-----------|--------|-------|
+| **landmark** | Hand-coded points in [`src/lib/constants.ts`](src/lib/constants.ts) | 10 |
+| **institute** | Pulled from Supabase `institutes` table where `is_available = true` | 1–N |
+| **incident** | Added per query at the caller's lat/lng | 1 |
+
+**Edges** are undirected. Static landmark↔landmark adjacencies are hand-curated in [`src/lib/ai/karachi-graph.ts`](src/lib/ai/karachi-graph.ts) based on actual Karachi geography:
+
+```
+Moti Mahal ─── Nipa Chowrangi ─── Lucky One Mall ─── North Nazimabad
+     │              │                                      │
+Korangi Crossing    │                                  Saddar (1.30×)
+     │              │                                      │
+Tariq Road      Moti Mahal                          Clifton Bridge (1.40×)
+     │           (1.10×)                                   │
+Nursery ─── Saddar (1.30×) ─── Clifton Bridge ─── Do Darya
+                                                           │
+                                                  Korangi Crossing
+```
+
+Each institute is auto-linked to its **2 nearest landmarks**. The incident is auto-linked to its **2 nearest non-incident nodes** (landmarks or institutes — so a very-near institute can be a one-hop goal).
+
+**Edge cost** = `haversine_km × trafficFactor`. The traffic factor is `1.0` by default, raised to `1.30–1.40` on chronically congested arterials (Saddar, Clifton Bridge). This is what differentiates A\*'s answer from straight-line haversine.
+
+### The heuristic — and why it's admissible
+
+```ts
+h(n) = min over goals g of haversine(n, g)
+```
+
+For A\* to return the **optimal** path, the heuristic must be *admissible*: it must never overestimate the true remaining cost. Since every edge cost is `haversine × trafficFactor` with `trafficFactor ≥ 1.0`, the true shortest road distance from `n` to any goal is *at least* the straight-line haversine to the nearest goal. So `h ≤ true cost`, always. Optimality holds.
+
+### The A\* code
+
+`src/lib/ai/a-star.ts` — generic, ~80 lines. Lazy decrease-key (push possibly-duplicate entries, skip already-closed nodes on pop) so we don't need a fancy heap.
+
+```ts
+function aStar({ start, isGoal, graph, heuristic }) {
+  const open = new MinHeap<NodeId>();        // OPEN set (min-heap by f-score)
+  const gScore = new Map();                   // best known g(n)
+  const cameFrom = new Map();                 // parent pointers for path reconstruction
+  const closed = new Set();                   // CLOSED set
+  const expandedNodes = [];                   // pop order — for visualisation
+
+  gScore.set(start, 0);
+  open.push(start, heuristic(start));         // f(start) = 0 + h(start)
+
+  while (!open.isEmpty()) {
+    const current = open.pop();
+    if (closed.has(current)) continue;        // stale duplicate, skip
+    closed.add(current);
+    expandedNodes.push(current);
+
+    if (isGoal(current)) return reconstructPath(...);
+
+    for (const { to, cost } of graph.neighbors(current)) {
+      if (closed.has(to)) continue;
+      const tentativeG = gScore.get(current) + cost;
+      if (tentativeG < (gScore.get(to) ?? Infinity)) {
+        cameFrom.set(to, current);
+        gScore.set(to, tentativeG);
+        open.push(to, tentativeG + heuristic(to));   // f(to) = g + h
+      }
+    }
+  }
+  return { found: false, ... };
+}
+```
+
+`src/lib/ai/min-heap.ts` is a textbook binary min-heap with `bubbleUp` and `bubbleDown` — `O(log n)` push and pop.
+
+### Wired into the broker
+
+In [`src/lib/agents/graph.ts`](src/lib/agents/graph.ts), the Broker node:
+
+1. Queries available institutes from Supabase (filters by `is_available = true` and removes rejected ones from `exclude_list`).
+2. Calls `buildKarachiGraph(institutes, incidentLocation)` to produce the in-memory graph.
+3. Runs A\* with `start = INCIDENT_NODE_ID`, `isGoal = id ∈ instituteNodeIds`, and the multi-goal haversine heuristic.
+4. Resolves the goal node back to the chosen institute (strips the `inst:` prefix from the node ID).
+5. Falls back to plain haversine reduce if A\* finds no path (graph disconnected — should never happen with the current adjacency).
+6. Persists the full search trace (chosen path, expanded nodes in order, cost, hops, ms) to the `incidents.search_trace` JSONB column for the dashboard to render.
+
+### Verified output (live demo)
+
+Running a real demo emergency at Korangi Crossing produces this server-side log:
+
+```
+[GRAPH:BROKER] A* found Edhi Foundation - Gulshan via 3 hops, cost 11.52 km, expanded 4/12 nodes in 3ms
+[GRAPH:BROKER] A* path: Incident → Korangi Crossing → Moti Mahal → Edhi Foundation - Gulshan
+```
+
+A\* expanded only **4 of 12** nodes — the heuristic is doing its job (a Dijkstra without `h` would explore many more). The chosen 3-hop path through Moti Mahal is provably optimal: any alternate route (via Saddar or via Do Darya/Clifton) is longer because of the traffic factors on those edges.
+
+### Where to look
+
+| File | Role |
+|------|------|
+| [`src/lib/ai/a-star.ts`](src/lib/ai/a-star.ts) | Generic A\* — start, goal predicate, graph, heuristic |
+| [`src/lib/ai/min-heap.ts`](src/lib/ai/min-heap.ts) | Binary min-heap for the OPEN set |
+| [`src/lib/ai/karachi-graph.ts`](src/lib/ai/karachi-graph.ts) | Graph builder + multi-goal haversine heuristic |
+| [`src/lib/agents/graph.ts`](src/lib/agents/graph.ts) | `brokerNode` calls A\*, persists trace |
+| [`supabase/add_search_trace.sql`](supabase/add_search_trace.sql) | Migration for the `search_trace` JSONB column |
+| [`src/app/institution/dashboard/page.tsx`](src/app/institution/dashboard/page.tsx) | `SearchTraceBadge` renders the algorithm's reasoning in the war room |
+| [`src/types/index.ts`](src/types/index.ts) | `SearchTrace` interface |
+
+### Algorithmic complexity (for the report)
+
+| Quantity | Value |
+|----------|-------|
+| Graph size `\|V\|` | landmarks (10) + institutes (1–3) + incident (1) ≈ 12–14 |
+| Graph size `\|E\|` | ~30 (bidirectional landmark adjacencies + 2/institute + 2 for incident) |
+| A\* time | `O((V + E) log V)` with min-heap — in practice 3–5 ms per dispatch |
+| A\* space | `O(V)` for `gScore`, `cameFrom`, `closed`, OPEN |
+| Optimality | **Guaranteed** — heuristic is admissible (haversine ≤ road distance) |
+| Completeness | **Guaranteed** — finite graph, non-negative edges |
+
+### Setup — run the migration
+
+A\* runs whether or not the migration is applied; only the persisted trace badge needs the new column. To enable it:
+
+```sql
+-- Paste into the Supabase SQL Editor, or copy from supabase/add_search_trace.sql
+ALTER TABLE incidents
+ADD COLUMN IF NOT EXISTS search_trace JSONB DEFAULT NULL;
+```
+
+After running, the next dispatched incident will show a small **A\* · N hops · X.XX km · EXP n/m** badge in the dashboard's active-dispatch panel. Click it to expand the full path of nodes the search walked.
 
 ---
 
@@ -167,6 +328,10 @@ src/
 │       ├── button.tsx, badge.tsx, card.tsx, dialog.tsx, drawer.tsx
 ├── lib/
 │   ├── agents/graph.ts                   # LangGraph 5-node state machine
+│   ├── ai/                               # Classical AI algorithms (informed search)
+│   │   ├── a-star.ts                       # Generic A* with full instrumentation
+│   │   ├── min-heap.ts                     # Binary min-heap for the OPEN set
+│   │   └── karachi-graph.ts                # Karachi road graph + admissible heuristic
 │   ├── voice-ai.ts                       # Whisper + Groq conversation engine
 │   ├── voice-channel.ts                  # WebRTC + Supabase signaling
 │   ├── routing.ts                        # OSRM route fetcher
@@ -174,9 +339,10 @@ src/
 │   ├── geocoding.ts                      # Reverse geocoding
 │   ├── constants.ts                      # Karachi landmarks + config
 │   ├── store.ts                          # Zustand stores + broadcast queue
+│   ├── theme.ts                          # Dashboard light/dark theme toggle
 │   ├── supabase/client.ts                # Lazy Supabase client
 │   └── utils.ts                          # cn() helper
-└── types/index.ts                        # TypeScript interfaces
+└── types/index.ts                        # TypeScript interfaces (incl. SearchTrace)
 ```
 
 ---
@@ -222,6 +388,7 @@ src/
 | route_duration_min | FLOAT | Estimated drive time |
 | route_progress_step | INT | Current waypoint index |
 | exclude_list | UUID[] | Rejected institute IDs |
+| search_trace | JSONB | A* search instrumentation (path, expanded nodes, cost, ms) |
 
 **incident_broadcasts** — HITL handshake
 | Column | Type | Description |
@@ -322,7 +489,8 @@ npm install --legacy-peer-deps
 1. Create a Supabase project
 2. Run `supabase/schema_v2.sql` in SQL Editor
 3. Run `supabase/add_route_columns.sql` in SQL Editor
-4. Ensure Realtime is enabled for: `incidents`, `incident_broadcasts`, `resources`
+4. Run `supabase/add_search_trace.sql` in SQL Editor *(adds the A\* trace column — optional but enables the search-trace badge in the war room)*
+5. Ensure Realtime is enabled for: `incidents`, `incident_broadcasts`, `resources`
 
 ### 3. Environment Variables
 `.env.local`:
@@ -379,7 +547,7 @@ Click **Demo** (bottom of civilian page) to trigger a random Karachi emergency w
 
 ## Team
 
-Built during [Hackathon Name] — 15-hour sprint.
+Built during AI Mustaqbil 2.0 — 24-hour sprint.
 
 ---
 

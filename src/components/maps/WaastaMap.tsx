@@ -42,6 +42,8 @@ interface WaastaMapProps {
   markers?: MapMarkerData[];
   flyTo?: { lat: number; lng: number } | null;
   className?: string;
+  theme?: 'light' | 'ink';
+  interactive?: boolean;
   // Route props
   routeWaypoints?: [number, number][] | null;  // [lat, lng] pairs
   routeProgressStep?: number | null;
@@ -52,6 +54,8 @@ export default function WaastaMap({
   zoom = 13,
   markers = [],
   className = 'h-full w-full',
+  theme = 'light',
+  interactive = true,
   routeWaypoints,
   routeProgressStep,
 }: WaastaMapProps) {
@@ -75,9 +79,15 @@ export default function WaastaMap({
       <Map
         center={[center.lng, center.lat]}
         zoom={zoom}
-        theme="light"
+        theme={theme === 'ink' ? 'dark' : 'light'}
+        interactive={interactive}
+        dragPan={interactive}
+        scrollZoom={interactive}
+        doubleClickZoom={interactive}
+        touchZoomRotate={interactive}
+        keyboard={interactive}
       >
-        <MapControls position="bottom-right" showZoom />
+        {interactive && <MapControls position="bottom-right" showZoom />}
 
         {/* Auto-zoom to show full route */}
         {fullRouteCoords && <MapFitBounds coordinates={fullRouteCoords} />}

@@ -42,8 +42,25 @@ export interface Incident {
   route_distance_km: number | null;
   route_duration_min: number | null;
   route_progress_step: number | null;
+  search_trace: SearchTrace | null;
   created_at: string;
   updated_at: string;
+}
+
+// A* search instrumentation written by the broker LangGraph node.
+// `path` is start → goal node sequence; `expanded_nodes` are popped
+// from the OPEN set in the order A* visited them (useful for viz).
+export interface SearchTrace {
+  algorithm: 'A*' | 'haversine_fallback';
+  path?: Array<{ id: string; label: string; lat: number; lng: number; kind: 'landmark' | 'institute' | 'incident' }>;
+  cost_km: number;
+  hops?: number;
+  expanded_nodes?: Array<{ id: string; label: string; lat: number; lng: number; kind: 'landmark' | 'institute' | 'incident' }>;
+  total_nodes?: number;
+  took_ms?: number;
+  heuristic?: string;
+  chosen_institute: { id: string; name: string } | null;
+  reason?: string;
 }
 
 export interface IncidentBroadcast {

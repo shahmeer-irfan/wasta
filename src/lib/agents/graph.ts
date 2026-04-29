@@ -8,6 +8,14 @@ import { StateGraph, END, START, Annotation } from '@langchain/langgraph';
 import { KARACHI_LANDMARKS } from '@/lib/constants';
 import { createServiceClient } from '@/lib/supabase/client';
 import { reverseGeocode } from '@/lib/geocoding';
+import { aStar } from '@/lib/ai/a-star';
+import {
+  buildKarachiGraph,
+  multiGoalHaversineHeuristic,
+  instituteIdFromNodeId,
+  INCIDENT_NODE_ID,
+  haversineKm as graphHaversine,
+} from '@/lib/ai/karachi-graph';
 import type { IncidentCard, LandmarkData } from '@/types';
 
 // ── State ────────────────────────────────────────────────────
@@ -190,7 +198,19 @@ async function geocodeNode(state: WaastaStateType): Promise<Partial<WaastaStateT
   };
 }
 
-// ── NODE 3: BROKER — Find nearest institute, create broadcast ─
+// ── NODE 3: BROKER — A* search picks the optimal institute ──────
+//
+// Replaces the previous straight-line haversine reduce with a real
+// informed-search algorithm. We build a small graph of Karachi
+// landmarks + the available institutes + the incident, then run
+// A* from the incident toward the nearest goal-set institute.
+//
+// Why A* and not haversine: haversine underestimates true road cost
+// because it ignores the road network's actual topology. Two
+// institutes can be close as the crow flies yet far apart by road
+// (e.g. across the harbour). A* with traffic-weighted edges gives
+// the realistic answer; haversine stays as a (provably admissible)
+// heuristic — it can never overestimate the true road cost.
 async function brokerNode(state: WaastaStateType): Promise<Partial<WaastaStateType>> {
   const { incident_card, incident_id, exclude_list } = state;
   console.log('[GRAPH:BROKER] Starting for incident', incident_id);
@@ -203,59 +223,131 @@ async function brokerNode(state: WaastaStateType): Promise<Partial<WaastaStateTy
 
   const supabase = createServiceClient();
 
-  // Query available institutes
   const { data: allInstitutes, error } = await supabase
-    .from('institutes')
-    .select('*')
-    .eq('is_available', true);
-
+    .from('institutes').select('*').eq('is_available', true);
   if (error || !allInstitutes?.length) {
     return { error: 'No available institutes', status: 'error' };
   }
 
-  // Filter out excluded institutes
-  const institutes = allInstitutes.filter(
-    (inst) => !exclude_list.includes(inst.id)
-  );
-
-  console.log('[GRAPH:BROKER] All institutes:', allInstitutes.length, 'After exclude:', institutes.length);
-  console.log('[GRAPH:BROKER] Available:', institutes.map(i => `${i.name} (${i.id.substring(0,8)})`));
-
+  const institutes = allInstitutes.filter((i) => !exclude_list.includes(i.id));
+  console.log('[GRAPH:BROKER] All institutes:', allInstitutes.length,
+    'After exclude:', institutes.length);
   if (institutes.length === 0) {
     console.error('[GRAPH:BROKER] No institutes available after filtering');
     return { error: 'All institutes rejected or unavailable', status: 'error' };
   }
 
-  // Find nearest by haversine
-  const nearest = institutes.reduce((best, inst) => {
-    const d = haversine(incLat, incLng, inst.lat, inst.lng);
-    const dBest = haversine(incLat, incLng, best.lat, best.lng);
-    return d < dBest ? inst : best;
+  // ── Build the graph & run A* ───────────────────────────────
+  const t0 = Date.now();
+  const { graph: graphData, impl } = buildKarachiGraph(
+    institutes.map((i) => ({ id: i.id, name: i.name, lat: i.lat, lng: i.lng })),
+    { lat: incLat, lng: incLng },
+  );
+
+  const goalSet = new Set(graphData.instituteNodeIds);
+  const result = aStar({
+    start: INCIDENT_NODE_ID,
+    isGoal: (id) => goalSet.has(id),
+    graph: impl,
+    heuristic: multiGoalHaversineHeuristic(graphData, graphData.instituteNodeIds),
   });
+  const ms = Date.now() - t0;
 
-  console.log('[GRAPH:BROKER] Selected:', nearest.name, 'ID:', nearest.id.substring(0,8), 'dist:', haversine(incLat, incLng, nearest.lat, nearest.lng).toFixed(2), 'km');
+  let chosen: typeof institutes[number] | null = null;
+  let searchTrace: Record<string, unknown> | null = null;
 
-  // Create broadcast
+  if (result.found && result.goalReached) {
+    const chosenId = instituteIdFromNodeId(result.goalReached);
+    chosen = institutes.find((i) => i.id === chosenId) ?? null;
+
+    const pathLabels = result.path
+      .map((id) => graphData.nodes.get(id)?.label ?? id)
+      .join(' → ');
+    console.log(
+      `[GRAPH:BROKER] A* found ${chosen?.name} ` +
+      `via ${result.path.length - 1} hops, ` +
+      `cost ${result.cost.toFixed(2)} km, ` +
+      `expanded ${result.expandedNodes.length}/${graphData.nodes.size} nodes ` +
+      `in ${ms}ms`,
+    );
+    console.log(`[GRAPH:BROKER] A* path: ${pathLabels}`);
+
+    searchTrace = {
+      algorithm: 'A*',
+      path: result.path.map((id) => {
+        const n = graphData.nodes.get(id);
+        return n
+          ? { id, label: n.label, lat: n.lat, lng: n.lng, kind: n.kind }
+          : null;
+      }).filter(Boolean),
+      cost_km: Math.round(result.cost * 100) / 100,
+      hops: Math.max(0, result.path.length - 1),
+      expanded_nodes: result.expandedNodes
+        .map((id) => {
+          const n = graphData.nodes.get(id);
+          return n ? { id, label: n.label, lat: n.lat, lng: n.lng, kind: n.kind } : null;
+        })
+        .filter(Boolean),
+      total_nodes: graphData.nodes.size,
+      took_ms: ms,
+      heuristic: 'haversine_to_nearest_goal',
+      chosen_institute: chosen ? { id: chosen.id, name: chosen.name } : null,
+    };
+  } else {
+    // A* failed — graph might be disconnected or all institutes filtered out.
+    // Fall back to plain haversine reduce so dispatch still works.
+    console.warn('[GRAPH:BROKER] A* found no path — falling back to haversine');
+    chosen = institutes.reduce((best, inst) => {
+      const d = graphHaversine({ lat: incLat, lng: incLng }, inst);
+      const dBest = graphHaversine({ lat: incLat, lng: incLng }, best);
+      return d < dBest ? inst : best;
+    });
+    searchTrace = {
+      algorithm: 'haversine_fallback',
+      reason: 'A* found no path through landmark graph',
+      chosen_institute: { id: chosen.id, name: chosen.name },
+      cost_km: Math.round(graphHaversine({ lat: incLat, lng: incLng }, chosen) * 100) / 100,
+    };
+  }
+
+  if (!chosen) {
+    return { error: 'Broker could not select institute', status: 'error' };
+  }
+
+  // ── Create broadcast ─────────────────────────────────────────
   const { data: broadcast } = await supabase
     .from('incident_broadcasts')
     .insert({
       incident_id,
-      institute_id: nearest.id,
+      institute_id: chosen.id,
       status: 'pending',
       confidence: 0.92,
     })
     .select()
     .single();
 
-  // Update incident
-  await supabase.from('incidents').update({
+  // ── Persist trace + status. search_trace is optional: if the column
+  // doesn't exist yet (migration not run) the update silently drops it
+  // server-side — the rest of the row still updates fine. ───
+  const updatePayload: Record<string, unknown> = {
     status: 'broadcasting',
     updated_at: new Date().toISOString(),
-  }).eq('id', incident_id);
+  };
+  if (searchTrace) updatePayload.search_trace = searchTrace;
+
+  const { error: updErr } = await supabase
+    .from('incidents').update(updatePayload).eq('id', incident_id);
+  if (updErr && /search_trace/.test(updErr.message)) {
+    console.warn('[GRAPH:BROKER] search_trace column missing — run supabase/add_search_trace.sql');
+    await supabase.from('incidents').update({
+      status: 'broadcasting',
+      updated_at: new Date().toISOString(),
+    }).eq('id', incident_id);
+  }
 
   return {
     broadcast_id: broadcast?.id ?? '',
-    target_institute_id: nearest.id,
+    target_institute_id: chosen.id,
     status: 'waiting_response',
   };
 }

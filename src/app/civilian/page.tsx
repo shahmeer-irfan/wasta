@@ -15,6 +15,22 @@ import { useWaastaStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase/client';
 import type { Incident, Resource, Institute } from '@/types';
 
+// Merge a partial UPDATE payload into an existing incident.
+// Postgres logical replication drops unchanged TOASTed columns from UPDATE WAL
+// entries. `route_waypoints` (5–10KB JSONB) is TOASTed; partial updates from
+// /api/simulate/step arrive without it. Merging instead of replacing also
+// guards against any non-PK column being absent from `payload.new`, which
+// otherwise can flip `accepted_by` to null and unmount the VoiceChat panel
+// every time the incident updates — killing the WebRTC handshake.
+function mergeIncident(prev: Incident | null, patch: Partial<Incident> & { id: string }): Incident {
+  if (!prev) return patch as Incident;
+  const next = { ...prev, ...patch } as Incident;
+  if (patch.route_waypoints == null) next.route_waypoints = prev.route_waypoints;
+  if (patch.accepted_by == null && prev.accepted_by) next.accepted_by = prev.accepted_by;
+  if (patch.assigned_resource == null && prev.assigned_resource) next.assigned_resource = prev.assigned_resource;
+  return next;
+}
+
 const VOICE_ENABLED = true; // Custom Whisper + Groq pipeline — always available
 
 const WaastaMap = dynamic(() => import('@/components/maps/WaastaMap'), {
@@ -239,9 +255,11 @@ export default function CivilianPage() {
           filter: `id=eq.${store.incidentId}`,
         },
         async (payload) => {
-          const updated = payload.new as Incident;
-          console.log('[CIVILIAN] Incident update:', updated.id.substring(0,8), '→', updated.status);
-          store.setIncident(updated);
+          const patch = payload.new as Partial<Incident> & { id: string };
+          const merged = mergeIncident(store.incident, patch);
+          console.log('[CIVILIAN] Incident update:', merged.id.substring(0,8), '→', merged.status);
+          store.setIncident(merged);
+          const updated = merged;
 
           // ACCEPTED → end AI call, switch to tracking, start voice with institution
           if (updated.status === 'accepted' && phase !== 'tracking') {

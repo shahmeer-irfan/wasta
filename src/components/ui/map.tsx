@@ -21,6 +21,10 @@ import { cn } from "@/lib/utils";
 type MapContextValue = {
   map: MapLibreGL.Map | null;
   isLoaded: boolean;
+  // Bumps each time the basemap style finishes (re)loading. MapRoute and any
+  // other layer-adding child should depend on this so they re-attach after
+  // a theme swap (setStyle wipes user-added layers but not Markers).
+  styleVersion: number;
 };
 
 const MapContext = createContext<MapContextValue | null>(null);
@@ -65,6 +69,7 @@ function Map({ children, styles, theme = "light", ...props }: MapProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
+  const [styleVersion, setStyleVersion] = useState(0);
 
   const mapStyles = useMemo(
     () => ({
@@ -78,6 +83,8 @@ function Map({ children, styles, theme = "light", ...props }: MapProps) {
     setIsMounted(true);
   }, []);
 
+  // Initialize map ONCE on mount. Theme + size changes are handled by separate
+  // effects below so the user can toggle without losing markers/state.
   useEffect(() => {
     if (!isMounted || !containerRef.current) return;
 
@@ -91,7 +98,12 @@ function Map({ children, styles, theme = "light", ...props }: MapProps) {
       ...props,
     });
 
-    const styleDataHandler = () => setIsStyleLoaded(true);
+    const styleDataHandler = () => {
+      setIsStyleLoaded(true);
+      // Bump after the very next paint so children that re-add layers run
+      // AFTER MapLibre has finished swapping styles.
+      setStyleVersion((v) => v + 1);
+    };
     const loadHandler = () => setIsLoaded(true);
 
     mapInstance.on("load", loadHandler);
@@ -107,6 +119,33 @@ function Map({ children, styles, theme = "light", ...props }: MapProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted]);
 
+  // Theme changes — swap the basemap style without re-creating the map.
+  // setStyle preserves layers/sources we added unless we tell it not to.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isLoaded) return;
+    const nextStyle = theme === "dark" ? mapStyles.dark : mapStyles.light;
+    setIsStyleLoaded(false);
+    map.setStyle(nextStyle, { diff: false });
+  }, [theme, mapStyles, isLoaded]);
+
+  // Container size changes — MapLibre's canvas does NOT auto-resize when its
+  // CSS box changes (no ResizeObserver internally). Without this, the canvas
+  // gets stuck at the size it had on first paint, leaving a dark dead area
+  // below the rendered tiles when the layout grows.
+  useEffect(() => {
+    const map = mapRef.current;
+    const el = containerRef.current;
+    if (!map || !el) return;
+
+    const ro = new ResizeObserver(() => {
+      // requestAnimationFrame avoids a layout-thrash race during theme toggles
+      requestAnimationFrame(() => map.resize());
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isLoaded]);
+
   const isLoading = !isMounted || !isLoaded || !isStyleLoaded;
 
   return (
@@ -114,6 +153,7 @@ function Map({ children, styles, theme = "light", ...props }: MapProps) {
       value={{
         map: mapRef.current,
         isLoaded: isMounted && isLoaded && isStyleLoaded,
+        styleVersion,
       }}
     >
       <div ref={containerRef} className="relative w-full h-full">
@@ -335,13 +375,22 @@ type MapRouteProps = {
 };
 
 function MapRoute({ coordinates, color = "#f97316", width = 3, opacity = 0.8 }: MapRouteProps) {
-  const { map, isLoaded } = useMap();
+  const { map, isLoaded, styleVersion } = useMap();
   const id = useId();
   const sourceId = `route-source-${id}`;
   const layerId = `route-layer-${id}`;
 
+  // (Re-)attach source + layer whenever the basemap style is reloaded.
+  // setStyle({ diff: false }) wipes user-added layers, so we depend on
+  // styleVersion and add ourselves back each time.
   useEffect(() => {
     if (!isLoaded || !map) return;
+
+    // Defensive: if a previous mount left these around, drop them first.
+    try {
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+    } catch { /* ignore */ }
 
     map.addSource(sourceId, {
       type: "geojson",
@@ -363,27 +412,34 @@ function MapRoute({ coordinates, color = "#f97316", width = 3, opacity = 0.8 }: 
       } catch { /* ignore */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, map]);
+  }, [isLoaded, map, styleVersion]);
 
   useEffect(() => {
     if (!isLoaded || !map || coordinates.length < 2) return;
-    const source = map.getSource(sourceId) as MapLibreGL.GeoJSONSource;
+    const source = map.getSource(sourceId) as MapLibreGL.GeoJSONSource | undefined;
     if (source) {
       source.setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates } });
     }
-  }, [isLoaded, map, coordinates, sourceId]);
+  }, [isLoaded, map, coordinates, sourceId, styleVersion]);
 
   return null;
 }
 
-// Auto-fit map to show a bounding box of coordinates
+// Auto-fit map to show a bounding box of coordinates.
+// Re-fits whenever the route's endpoints change (i.e. a new route is loaded),
+// but stays put on every progress-step update so the operator's pan/zoom isn't hijacked.
 function MapFitBounds({ coordinates }: { coordinates: [number, number][] }) {
   const { map, isLoaded } = useMap();
-  const fitted = useRef(false);
+  const lastFitKey = useRef<string>('');
 
   useEffect(() => {
-    if (!isLoaded || !map || coordinates.length < 2 || fitted.current) return;
-    fitted.current = true;
+    if (!isLoaded || !map || coordinates.length < 2) return;
+
+    const start = coordinates[0];
+    const end = coordinates[coordinates.length - 1];
+    const key = `${start[0]},${start[1]}|${end[0]},${end[1]}|${coordinates.length}`;
+    if (lastFitKey.current === key) return;
+    lastFitKey.current = key;
 
     const lngs = coordinates.map(c => c[0]);
     const lats = coordinates.map(c => c[1]);
