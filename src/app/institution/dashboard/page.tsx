@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Radio, Ambulance, Flame, AlertTriangle, Car, Heart, HelpCircle,
-  ChevronLeft, RefreshCw, Sun, Moon,
+  ChevronLeft, RefreshCw, Sun, Moon, RotateCcw,
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -216,6 +216,43 @@ export default function InstitutionDashboard() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // ── Fail-safe: any en_route / on_scene / returning incident in local state
+  // that's missing route_waypoints gets re-fetched explicitly. Belt-and-braces
+  // backup for realtime UPDATE payloads that arrive without the JSONB
+  // (TOAST omission, transient channel hiccups, dispatch UPDATE missed during
+  // a remount, etc.) — without this, the map can sit there with no
+  // polyline even though the DB clearly has one. ───
+  useEffect(() => {
+    const needsRefetch = allIncidents.filter(
+      (i) =>
+        ['dispatched', 'en_route', 'on_scene', 'returning'].includes(i.status) &&
+        i.assigned_resource &&
+        (!i.route_waypoints || i.route_waypoints.length < 2),
+    );
+    if (needsRefetch.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const incident of needsRefetch) {
+        const { data, error } = await supabase
+          .from('incidents')
+          .select('route_waypoints, route_progress_step, route_distance_km, route_duration_min, status, assigned_resource')
+          .eq('id', incident.id)
+          .single();
+        if (cancelled || error || !data) continue;
+        if (!data.route_waypoints || (data.route_waypoints as unknown[]).length < 2) continue;
+        console.log(
+          `[DASHBOARD] Re-fetched waypoints for ${incident.id.slice(0, 8)} ` +
+          `(${(data.route_waypoints as unknown[]).length} pts, step ${data.route_progress_step})`,
+        );
+        setAllIncidents((prev) =>
+          prev.map((i) => (i.id === incident.id ? mergeIncident(i, { id: incident.id, ...data } as Partial<Incident> & { id: string }) : i)),
+        );
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [allIncidents]);
+
   // Simulation drivers (unchanged)
   useEffect(() => {
     const enRoute = allIncidents.filter((i) => i.status === 'en_route' && i.assigned_resource);
@@ -385,6 +422,16 @@ export default function InstitutionDashboard() {
               value={store.broadcastQueue.length} label="WAITING" tone="alert"
             />
           )}
+          <RecallAllButton
+            isInk={isInk}
+            onComplete={(payload) => {
+              // Clear local UI state immediately so the operator sees the wipe.
+              setAllIncidents([]);
+              setSelectedIncident(null);
+              store.finishCall();
+              console.log('[DASHBOARD] Recall-all done:', payload);
+            }}
+          />
           <ThemeToggle isInk={isInk} onClick={toggleTheme} />
         </div>
       </header>
@@ -581,6 +628,63 @@ export default function InstitutionDashboard() {
 // ============================================================
 // Sub-components
 // ============================================================
+
+// ============================================================
+// "Recall All" — wipes incidents and sends every ambulance back to its
+// station. Calls /api/admin/reset which runs the supabase/reset.sql
+// equivalent server-side (service role key).
+// ============================================================
+function RecallAllButton({
+  isInk,
+  onComplete,
+}: {
+  isInk: boolean;
+  onComplete: (payload: { resources_reset: number; institutes: number; took_ms: number }) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const handle = useCallback(async () => {
+    if (busy) return;
+    if (!window.confirm(
+      'Recall ALL ambulances and clear ALL active incidents?\n' +
+      'This deletes every broadcast and incident, then sends every resource ' +
+      'back to its station. Cannot be undone.'
+    )) return;
+
+    setBusy(true);
+    try {
+      const res = await fetch('/api/admin/reset', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Recall failed: ${data.error || 'Unknown error'}`);
+        return;
+      }
+      onComplete(data);
+    } catch (err) {
+      alert(`Recall failed: ${err instanceof Error ? err.message : 'network error'}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, onComplete]);
+
+  return (
+    <button
+      onClick={handle}
+      disabled={busy}
+      title="Wipe all incidents and recall every ambulance back to its station"
+      className={cn(
+        'flex items-center gap-1.5 px-2.5 py-1 rounded-sm border text-[10.5px] font-mono-tabular uppercase tracking-[0.08em] transition-all',
+        'disabled:opacity-50 disabled:cursor-wait',
+        isInk
+          ? 'border-[color:var(--ink-line)] hover:border-[color:var(--action)] text-[color:var(--ink-fg-soft)] hover:text-[color:var(--action)] bg-[color:var(--ink-bg-3)]'
+          : 'border-[color:var(--paper-line)] hover:border-[color:var(--action)] text-[color:var(--paper-ink-soft)] hover:text-[color:var(--action)] bg-white/60',
+      )}
+    >
+      <RotateCcw className={cn('h-3 w-3', busy && 'animate-spin')} />
+      <span className="font-bold">{busy ? 'Recalling…' : 'Recall All'}</span>
+    </button>
+  );
+}
 
 function ThemeToggle({ isInk, onClick }: { isInk: boolean; onClick: () => void }) {
   return (

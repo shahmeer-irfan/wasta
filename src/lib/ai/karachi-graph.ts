@@ -171,11 +171,9 @@ export function buildKarachiGraph(
   // Rank ALL non-incident nodes (landmarks + institutes) by distance,
   // pick the K nearest. Including institutes here lets a very-near
   // institute be one hop away from the incident.
-  const candidates: Array<{ id: string; dist: number }> = [];
-  for (const node of nodes.values()) {
-    if (node.id === INCIDENT_NODE_ID) continue;
-    candidates.push({ id: node.id, dist: haversineKm(incident, node) });
-  }
+  const candidates: Array<{ id: string; dist: number }> = Array.from(nodes.values())
+    .filter((node) => node.id !== INCIDENT_NODE_ID)
+    .map((node) => ({ id: node.id, dist: haversineKm(incident, node) }));
   candidates.sort((a, b) => a.dist - b.dist);
   for (const { id, dist } of candidates.slice(0, incidentLinks)) {
     adjacency.get(INCIDENT_NODE_ID)!.push({ to: id, cost: dist });
